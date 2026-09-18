@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 import { api } from '@/shared/api';
 import type { Plugin } from '@/shared/types';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 
 type PluginsContextValue = {
@@ -33,6 +34,12 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
   const [pluginsError, setPluginsError] = useState<string | null>(null);
 
   const refreshPlugins = useCallback(async () => {
+    if (IS_LLM4AD_EMBEDDED) {
+      setPlugins([]);
+      setPluginsError(null);
+      setLoading(false);
+      return;
+    }
     try {
       const res = await api.plugins.list();
       if (res.ok) {

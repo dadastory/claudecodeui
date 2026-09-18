@@ -63,8 +63,12 @@ async function withForkableClaude(
 
 function seedSource(directory: string): void {
   const now = new Date().toISOString();
+  sessionsDb.createAppSession(SOURCE_ID, 'claude', directory, 'Original session');
+  sessionsDb.assignProviderSessionId(SOURCE_ID, 'native-source');
+  // The provider watcher discovers the transcript after the runtime reports
+  // its native id, which attaches the path to the stable app-facing row.
   sessionsDb.createSession(
-    SOURCE_ID,
+    'native-source',
     'claude',
     directory,
     'Original session',
@@ -72,7 +76,6 @@ function seedSource(directory: string): void {
     now,
     path.join(directory, 'native-source.jsonl'),
   );
-  sessionsDb.assignProviderSessionId(SOURCE_ID, 'native-source');
 }
 
 test('a fork becomes an independent session that points back at its source', async () => {

@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Tooltip, PillBar, Pill } from '@/shared/ui';
 import type { AppTab } from '@/shared/types';
 import { usePlugins,PluginIcon } from '@/modules/plugins';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type WorkspaceTabsProps = {
   activeTab: AppTab;
@@ -62,13 +63,15 @@ export default function WorkspaceTabs({
   const { t } = useTranslation();
   const { plugins } = usePlugins();
 
-  const builtInTabs: BuiltInTab[] = [
-    ...BASE_TABS,
-    ...(shouldShowBrowserTab ? [BROWSER_TAB] : []),
-    ...(shouldShowTasksTab ? [TASKS_TAB] : []),
-  ];
+  const builtInTabs: BuiltInTab[] = IS_LLM4AD_EMBEDDED
+    ? BASE_TABS.filter((tab) => tab.id === 'chat')
+    : [
+        ...BASE_TABS,
+        ...(shouldShowBrowserTab ? [BROWSER_TAB] : []),
+        ...(shouldShowTasksTab ? [TASKS_TAB] : []),
+      ];
 
-  const pluginTabs: PluginTab[] = plugins
+  const pluginTabs: PluginTab[] = (IS_LLM4AD_EMBEDDED ? [] : plugins)
     .filter((p) => p.enabled)
     .map((p) => ({
       kind: 'plugin',

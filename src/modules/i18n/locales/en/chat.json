@@ -15,7 +15,7 @@
     "user": "U",
     "error": "Error",
     "tool": "Tool",
-    "claude": "Claude",
+    "claude": "Proposal Assistant",
     "cursor": "Cursor",
     "codex": "Codex",
     "opencode": "OpenCode"
@@ -113,6 +113,8 @@
   },
   "input": {
     "placeholder": "Type / for commands, @ for files, or ask {{provider}} anything...",
+    "embeddedPlaceholder": "Add requirements for “{{stage}}” or continue the discussion…",
+    "embeddedStageFallback": "this stage",
     "placeholderDefault": "Type your message...",
     "disabled": "Input disabled",
     "attachFiles": "Attach files",
@@ -181,7 +183,11 @@
   "session": {
     "continue": {
       "title": "Continue your conversation",
-      "description": "Ask questions about your code, request changes, or get help with development tasks"
+      "description": "Ask questions about your code, request changes, or get help with development tasks",
+      "embeddedTitle": "Start with {{stage}}",
+      "embeddedDescription": "Add requirements for this stage or choose a concrete starting point below.",
+      "guideTitle": "Try telling the research assistant",
+      "guideDescription": "Select an example to fill the composer, then adjust the details before sending."
     },
     "loading": {
       "olderMessages": "Loading older messages...",

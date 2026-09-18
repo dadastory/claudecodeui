@@ -53,8 +53,15 @@ import { fileTreeRoutes } from './modules/file-tree/index.js';
 import { worktreesRoutes } from './modules/worktrees/index.js';
 import browserUseMcpRoutes from './modules/browser-use/browser-use-mcp.routes.js';
 import { browserUseService } from './modules/browser-use/browser-use.service.js';
-import { initializeDatabase, sessionsDb } from './modules/database/index.js';
+import { initializeDatabase, sessionsDb, userDb } from './modules/database/index.js';
 import { configureWebPush } from './modules/notifications/index.js';
+import { createProject } from './modules/projects/services/project-management.service.js';
+import { isEmbeddedHttpPathAllowed } from './shared/embeddedRuntime.js';
+import {
+    installEmbeddedSkills,
+    setEmbeddedRuntimeProfile,
+    type EmbeddedRuntimeProfile,
+} from './shared/embeddedProfile.js';
 
 const __dirname = getModuleDirectory(import.meta.url);
 // The server source runs from /server, while the compiled output runs from /dist-server/server.
@@ -83,6 +90,7 @@ console.log('SERVER_PORT from env:', process.env.SERVER_PORT);
 
 const app = express();
 const server = http.createServer(app);
+const IS_LLM4AD_EMBEDDED = process.env.LLM4AD_EMBEDDED_MODE === 'true';
 const queryClaude = providerRuntimeService.getRunner('claude');
 const queryCursor = providerRuntimeService.getRunner('cursor');
 const queryCodex = providerRuntimeService.getRunner('codex');
@@ -100,6 +108,8 @@ const agentRoutes = createAgentModule({
 
 // Single WebSocket server that handles chat, shell, and plugin proxy paths.
 createWebSocketServer(server, {
+    embedded: IS_LLM4AD_EMBEDDED,
+    embeddedToken: process.env.LLM4AD_RUNTIME_TOKEN,
     verifyClient: {
         isPlatform: IS_PLATFORM,
         authenticateWebSocket,
@@ -133,6 +143,59 @@ app.use(express.json({
     }
 }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+if (IS_LLM4AD_EMBEDDED) {
+    app.put('/internal/runtime-profile', async (req, res) => {
+        if (req.headers['x-llm4ad-runtime-token'] !== process.env.LLM4AD_RUNTIME_TOKEN) {
+            return res.status(401).json({ error: 'Invalid runtime service token' });
+        }
+        try {
+            const profile = req.body as EmbeddedRuntimeProfile;
+            if (!profile || typeof profile.sessionId !== 'string' || typeof profile.model !== 'string') {
+                return res.status(422).json({ error: 'Invalid runtime profile' });
+            }
+            const skills = Array.isArray(profile.skills) ? profile.skills : [];
+            const configRoot = await installEmbeddedSkills(skills);
+            profile.env = {
+                ...(profile.env || {}),
+                CLAUDE_CONFIG_DIR: configRoot,
+                HOME: process.env.HOME || '/workspace/.cloudcli-home',
+            };
+            const existingSession = sessionsDb.getSessionById(profile.sessionId);
+            if (!existingSession) {
+                sessionsDb.createAppSession(
+                    profile.sessionId,
+                    'claude',
+                    process.env.LLM4AD_WORKSPACE_ROOT || '/workspace/source',
+                    process.env.LLM4AD_WORKSPACE_NAME || 'Research workspace',
+                );
+            } else if (
+                existingSession.provider_session_id === profile.sessionId
+                && existingSession.jsonl_path === null
+            ) {
+                // Older startup migrations could mistake a pending app session
+                // for a provider-native session before its first model turn.
+                sessionsDb.detachProviderSession(profile.sessionId);
+            }
+            setEmbeddedRuntimeProfile(profile);
+            return res.json({ success: true, sessionId: profile.sessionId });
+        } catch (error) {
+            return res.status(422).json({
+                error: error instanceof Error ? error.message : 'Could not configure runtime profile',
+            });
+        }
+    });
+
+    app.use((req, res, next) => {
+        if (req.path !== '/health' && req.headers['x-llm4ad-runtime-token'] !== process.env.LLM4AD_RUNTIME_TOKEN) {
+            return res.status(401).json({ error: 'Invalid runtime service token' });
+        }
+        if (isEmbeddedHttpPathAllowed(req.path, req.method)) {
+            return next();
+        }
+        return res.status(404).json({ error: 'Route is unavailable in the embedded research runtime' });
+    });
+}
 
 // Public health check endpoint (no authentication required)
 app.get('/health', (req, res) => {
@@ -330,6 +393,26 @@ async function startServer() {
         // Initialize authentication database
         await initializeDatabase();
 
+        if (IS_LLM4AD_EMBEDDED) {
+            if (!userDb.hasUsers()) {
+                userDb.createUser('llm4ad-runtime', '!');
+            }
+            const runtimeUser = userDb.getFirstUser();
+            if (runtimeUser && !userDb.hasCompletedOnboarding(runtimeUser.id)) {
+                userDb.completeOnboarding(runtimeUser.id);
+            }
+            try {
+                await createProject({
+                    projectPath: process.env.LLM4AD_WORKSPACE_ROOT || '/workspace/source',
+                    customName: process.env.LLM4AD_WORKSPACE_NAME || 'Research workspace',
+                });
+            } catch (error) {
+                if (!(error instanceof AppError) || error.code !== 'PROJECT_ALREADY_EXISTS') {
+                    throw error;
+                }
+            }
+        }
+
         // Configure Web Push (VAPID keys)
         configureWebPush();
 
@@ -370,9 +453,11 @@ async function startServer() {
             initializeScheduledMessageDispatcher(providerRuntimeService);
 
             // Start server-side plugin processes for enabled plugins
-            startEnabledPluginServers().catch(err => {
-                console.error('[Plugins] Error during startup:', err.message);
-            });
+            if (!IS_LLM4AD_EMBEDDED) {
+                startEnabledPluginServers().catch(err => {
+                    console.error('[Plugins] Error during startup:', err.message);
+                });
+            }
         });
 
         await closeSessionsWatcher();

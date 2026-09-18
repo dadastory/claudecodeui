@@ -4,6 +4,7 @@ import type { Dispatch, KeyboardEvent, RefObject, SetStateAction } from 'react';
 import { api } from '@/shared/api';
 import { safeLocalStorage } from '@/modules/chat/utils/chatStorage';
 import type { LLMProvider, Project, SlashCommand } from '@/shared/types';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 const COMMAND_QUERY_DEBOUNCE_MS = 150;
 
@@ -162,7 +163,7 @@ export function useSlashCommands({
     let cancelled = false;
 
     const fetchCommands = async () => {
-      if (!selectedProject) {
+      if (IS_LLM4AD_EMBEDDED || !selectedProject) {
         setSlashCommands([]);
         setFilteredCommands([]);
         return;
@@ -171,11 +172,9 @@ export function useSlashCommands({
       try {
         const workspacePath = selectedProject.fullPath || selectedProject.path || '';
         const response = await api.commands.list(workspacePath || selectedProject.path);
-
         if (!response.ok) {
           throw new Error('Failed to fetch commands');
         }
-
         const data = await response.json();
         const skillsResponse = await api.providers.skills(provider, { workspacePath });
         const skillsData = skillsResponse.ok
@@ -341,6 +340,10 @@ export function useSlashCommands({
   );
 
   const handleToggleCommandMenu = useCallback(() => {
+    if (IS_LLM4AD_EMBEDDED) {
+      resetCommandMenuState();
+      return;
+    }
     const isOpening = !showCommandMenu;
     setShowCommandMenu(isOpening);
     setCommandQuery('');
@@ -351,10 +354,14 @@ export function useSlashCommands({
     }
 
     textareaRef.current?.focus();
-  }, [showCommandMenu, slashCommands, textareaRef]);
+  }, [resetCommandMenuState, showCommandMenu, slashCommands, textareaRef]);
 
   const handleCommandInputChange = useCallback(
     (newValue: string, cursorPos: number) => {
+      if (IS_LLM4AD_EMBEDDED) {
+        resetCommandMenuState();
+        return;
+      }
       if (!newValue.trim()) {
         resetCommandMenuState();
         return;

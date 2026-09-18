@@ -10,6 +10,7 @@ import type { Project, ProjectSession } from '@/shared/types';
  * Read it to hide or gate features that only exist in one of the two deployments.
  */
 export const IS_PLATFORM = import.meta.env?.VITE_IS_PLATFORM === 'true';
+export const IS_LLM4AD_EMBEDDED = import.meta.env?.VITE_LLM4AD_EMBEDDED === 'true';
 
 // ---------------------------
 

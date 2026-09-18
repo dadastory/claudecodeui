@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api } from '@/shared/api';
 import type { ScheduledMessage } from '@/shared/types';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 /**
  * The messages queued to be sent to one session later.
@@ -19,7 +20,7 @@ export function useScheduledMessages(sessionId: string | null) {
   const refresh = useCallback(async () => {
     // No session means nothing to fetch; the render-time reset below already
     // cleared whatever the previous session had on screen.
-    if (!sessionId) {
+    if (IS_LLM4AD_EMBEDDED || !sessionId) {
       return;
     }
 
@@ -54,7 +55,7 @@ export function useScheduledMessages(sessionId: string | null) {
     scheduledFor: Date;
     options?: Record<string, unknown>;
   }) => {
-    if (!sessionId) return false;
+    if (IS_LLM4AD_EMBEDDED || !sessionId) return false;
 
     try {
       const response = await api.scheduledMessages.create({
@@ -75,6 +76,7 @@ export function useScheduledMessages(sessionId: string | null) {
   }, [refresh, sessionId]);
 
   const cancel = useCallback(async (id: string) => {
+    if (IS_LLM4AD_EMBEDDED) return;
     try {
       await api.scheduledMessages.cancel(id);
     } catch (error) {

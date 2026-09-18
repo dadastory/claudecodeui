@@ -29,6 +29,7 @@ import { escapeRegExp } from '@/modules/chat/utils/chatFormatting';
 import { useFileMentions } from '@/modules/chat/hooks/useFileMentions';
 import { useInputHistory } from '@/modules/chat/hooks/useInputHistory';
 import { useSlashCommands } from '@/modules/chat/hooks/useSlashCommands';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type UseChatComposerStateArgs = {
   selectedProject: Project | null;
@@ -48,7 +49,7 @@ type UseChatComposerStateArgs = {
   processingSessions?: SessionActivityMap;
   canAbortSession: boolean;
   tokenBudget: Record<string, unknown> | null;
-  sendMessage: (message: unknown) => void;
+  sendMessage: (message: unknown) => boolean;
   sendByCtrlEnter?: boolean;
   onSessionProcessing?: MarkSessionProcessing;
   /**
@@ -61,9 +62,12 @@ type UseChatComposerStateArgs = {
   onSessionEstablished?: (sessionId: string, context: SessionEstablishedContext) => void;
   onFileOpen?: (filePath: string, diffInfo?: unknown) => void;
   onShowSettings?: () => void;
-  scrollToBottom: () => void;
+  /**
+   * Re-arms auto-follow and pins the viewport to the newest message. Used on
+   * send, where following is unambiguously what the user asked for.
+   */
+  followLatestMessage: () => void;
   addMessage: (msg: ChatMessage) => void;
-  setIsUserScrolledUp: (isScrolledUp: boolean) => void;
   setPendingPermissionRequests: Dispatch<SetStateAction<PendingPermissionRequest[]>>;
 };
 
@@ -172,9 +176,8 @@ export function useChatComposerState({
   onSessionEstablished,
   onFileOpen,
   onShowSettings,
-  scrollToBottom,
+  followLatestMessage,
   addMessage,
-  setIsUserScrolledUp,
   setPendingPermissionRequests,
 }: UseChatComposerStateArgs) {
   // The composer text together with the chat scope it belongs to. They are one
@@ -368,7 +371,7 @@ export function useChatComposerState({
 
   const executeCommand = useCallback(
     async (command: SlashCommand, rawInput?: string, options?: { preserveInput?: boolean }) => {
-      if (!command || !selectedProject) {
+      if (IS_LLM4AD_EMBEDDED || !command || !selectedProject) {
         return;
       }
 
@@ -547,6 +550,9 @@ export function useChatComposerState({
 
   const handlePaste = useCallback(
     (event: ClipboardEvent<HTMLTextAreaElement>) => {
+      if (IS_LLM4AD_EMBEDDED) {
+        return;
+      }
       const items = Array.from(event.clipboardData.items);
 
       items.forEach((item) => {
@@ -571,6 +577,7 @@ export function useChatComposerState({
   );
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
+    disabled: IS_LLM4AD_EMBEDDED,
     maxSize: MAX_ATTACHMENT_SIZE,
     maxFiles: MAX_ATTACHMENT_COUNT,
     onDrop: handleAttachmentFiles,
@@ -618,8 +625,12 @@ export function useChatComposerState({
     ) => {
       event.preventDefault();
       const currentInput = queuedSubmission?.content ?? inputValueRef.current;
-      const currentAttachments = queuedSubmission?.attachments ?? attachedFiles;
-      const previouslyUploadedAttachments = queuedSubmission?.uploadedAttachments ?? [];
+      const currentAttachments = IS_LLM4AD_EMBEDDED
+        ? []
+        : queuedSubmission?.attachments ?? attachedFiles;
+      const previouslyUploadedAttachments = IS_LLM4AD_EMBEDDED
+        ? []
+        : queuedSubmission?.uploadedAttachments ?? [];
       if (
         (
           !currentInput.trim()
@@ -709,7 +720,7 @@ export function useChatComposerState({
       // Also accept exact "help" as a convenience alias for users who expect CLI-style help.
       const commandInput = currentInput.trimEnd();
       const isHelpAlias = commandInput.trim().toLowerCase() === 'help';
-      if (commandInput.startsWith('/') || isHelpAlias) {
+      if (!IS_LLM4AD_EMBEDDED && (commandInput.startsWith('/') || isHelpAlias)) {
         const firstSpace = commandInput.indexOf(' ');
         const commandName = isHelpAlias
           ? '/help'
@@ -827,25 +838,9 @@ export function useChatComposerState({
         ...(editingAnchorId ? { replacesAnchorId: editingAnchorId } : {}),
       };
 
-      addMessage(userMessage);
-      // Mark this request as processing in the per-session activity map (the
-      // single source of truth the indicator derives from). The id is always
-      // concrete at this point — no pending placeholder exists anymore.
-      onSessionProcessing?.(targetSessionId, {
-        statusText: null,
-        canInterrupt: true,
-      });
-
-      setIsUserScrolledUp(false);
-      setTimeout(() => scrollToBottom(), 100);
-
-      // One message shape for every provider. The backend resolves the
-      // provider, project path, and provider-native resume id from the
-      // session row; `options` only carries composer-level preferences.
-      sendMessage({
-        // Replacing an already-sent message is its own frame: it changes the
-        // shape of the conversation, so it gets validated separately and can
-        // report why it was refused.
+      // Do not consume the draft when the socket is between connection
+      // attempts. The user can submit the unchanged text after reconnection.
+      const wasSent = sendMessage({
         type: editingAnchorId ? 'chat.edit-send' : 'chat.send',
         sessionId: targetSessionId,
         ...(editingAnchorId ? { anchorId: editingAnchorId } : {}),
@@ -855,6 +850,26 @@ export function useChatComposerState({
           attachments: uploadedAttachments,
         },
       });
+      if (!wasSent) {
+        return;
+      }
+
+      addMessage(userMessage);
+      // Mark this request as processing in the per-session activity map (the
+      // single source of truth the indicator derives from). The id is always
+      // concrete at this point — no pending placeholder exists anymore.
+      onSessionProcessing?.(targetSessionId, {
+        statusText: null,
+        canInterrupt: true,
+      });
+
+      // Sending is the one action that always means "show me the newest", so it
+      // re-arms follow outright instead of waiting on a timer: the previous
+      // `setTimeout(…, 100)` both delayed the scroll past the point where the
+      // user could start reading the message above, and moved the viewport back
+      // down even if they had scrolled away in the meantime.
+      followLatestMessage();
+
       setEditingAnchorId(null);
 
       // Recorded under the (possibly just-allocated) session id, so the first
@@ -890,12 +905,11 @@ export function useChatComposerState({
       provider,
       recordSentMessage,
       resetCommandMenuState,
-      scrollToBottom,
+      followLatestMessage,
       selectedProject,
       sendMessage,
       sessionKey,
       addMessage,
-      setIsUserScrolledUp,
       slashCommands,
     ],
   );

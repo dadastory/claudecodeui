@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 
@@ -414,7 +415,23 @@ async function getSessionMessages(
   try {
     // The DB row is keyed by the app-facing session id, while the JSONL rows
     // on disk carry the provider-native id — both ids are needed here.
-    const jsonLPath = sessionsDb.getSessionById(sessionId)?.jsonl_path;
+    const session = sessionsDb.getSessionById(sessionId);
+    let jsonLPath = session?.jsonl_path;
+
+    // The filesystem watcher intentionally polls at a low frequency. A newly
+    // completed session can therefore be reopened before its path is indexed.
+    // Claude's transcript location is deterministic, so read that canonical
+    // path immediately while the watcher catches up.
+    if (!jsonLPath && session?.project_path) {
+      const encodedProjectPath = session.project_path.replace(/[^a-zA-Z0-9-]/g, '-');
+      jsonLPath = path.join(
+        os.homedir(),
+        '.claude',
+        'projects',
+        encodedProjectPath,
+        `${providerSessionId}.jsonl`,
+      );
+    }
 
     if (!jsonLPath) {
       return { messages: [], total: 0, hasMore: false };
@@ -568,15 +585,60 @@ async function getSessionMessages(
  * run and then vanishes on reload. The skill is already represented by the
  * `Skill` tool call, so it is never user-visible content.
  */
+
+/**
+ * The opening line of every Claude continuation summary.
+ *
+ * Named once so the internal-content list and `isCompactionRow` below cannot
+ * drift apart: the same sentence is what makes an unflagged row recognisable as
+ * compaction output.
+ */
+const COMPACT_CONTINUATION_PREFIX = 'This session is being continued from a previous conversation';
+
 const INTERNAL_CONTENT_PREFIXES = [
   '<system-reminder>',
   'Caveat:',
   '[Request interrupted',
   'Base directory for this skill:',
+  // Claude's own continuation summary, injected as a synthetic user row after
+  // automatic context compaction. Content-shaped, so it also covers SDK builds
+  // that stream the summary without either provenance flag.
+  COMPACT_CONTINUATION_PREFIX,
 ] as const;
 
 function isInternalContent(content: string): boolean {
   return INTERNAL_CONTENT_PREFIXES.some((prefix) => content.startsWith(prefix));
+}
+
+/**
+ * True for the row Claude writes when automatic context compaction replaced the
+ * conversation with a summary.
+ *
+ * The row is persisted with `isCompactSummary: true` and streamed by the SDK
+ * with `isSynthetic: true`, and it stays in the transcript so the next turn can
+ * resume from the summary. It is not something the user wrote, so it must never
+ * render as a user bubble — the content check is the backstop for the streaming
+ * path, where neither flag is guaranteed to be present.
+ *
+ * Content-shape agnostic on purpose: the summary arrives as a plain string on
+ * some rows and as a `text` block array on others, and only the string shape
+ * used to be checked, which let array-shaped summaries reach the transcript.
+ */
+function isCompactionRow(raw: AnyRecord, content: unknown): boolean {
+  if (raw.isCompactSummary === true) {
+    return true;
+  }
+
+  const texts = typeof content === 'string'
+    ? [content]
+    : Array.isArray(content)
+      ? content
+        .filter((part: AnyRecord) => part?.type === 'text' && typeof part.text === 'string')
+        .map((part: AnyRecord) => part.text as string)
+      : [];
+
+  return raw.isSynthetic === true
+    && texts.some((text) => text.startsWith(COMPACT_CONTINUATION_PREFIX));
 }
 
 /**
@@ -692,6 +754,14 @@ export class ClaudeSessionsProvider implements IProviderSessions {
     const baseId = raw.uuid || generateMessageId('claude');
 
     if (raw.message?.role === 'user' && raw.message?.content && raw.isMeta !== true) {
+      // Checked before the content shape is branched on: the summary is a plain
+      // string on some rows and a `text` block array on others, and only the
+      // string branch used to filter it — which let array-shaped summaries
+      // through as user-authored bubbles until the next reload.
+      if (isCompactionRow(raw, raw.message.content)) {
+        return messages;
+      }
+
       if (Array.isArray(raw.message.content)) {
         // Image attachments sent through the SDK are persisted as base64
         // `image` blocks next to the prompt text. Collect them so the UI can
@@ -782,28 +852,6 @@ export class ClaudeSessionsProvider implements IProviderSessions {
         }
       } else if (typeof raw.message.content === 'string') {
         const text = raw.message.content;
-
-        /**
-         * Claude stores compact summaries as synthetic "user" rows so the CLI
-         * can resume the next session turn with the summary in-context.
-         *
-         * For the web UI this is much more useful as assistant-authored summary
-         * text; otherwise it is both filtered by the generic internal-prefix
-         * check and visually mislabeled as a user message.
-         */
-        if (raw.isCompactSummary === true && text.trim()) {
-          messages.push(createNormalizedMessage({
-            id: baseId,
-            sessionId,
-            timestamp: ts,
-            provider: PROVIDER,
-            kind: 'text',
-            role: 'assistant',
-            content: text,
-            isCompactSummary: true,
-          }));
-          return messages;
-        }
 
         /**
          * Local slash commands are serialized as tagged text even though they

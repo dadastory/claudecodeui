@@ -15,7 +15,7 @@
     "user": "U",
     "error": "错误",
     "tool": "工具",
-    "claude": "Claude",
+    "claude": "提案助手",
     "cursor": "Cursor",
     "codex": "Codex",
     "opencode": "OpenCode"
@@ -106,6 +106,8 @@
   },
   "input": {
     "placeholder": "输入 / 调用命令，@ 选择文件，或向 {{provider}} 提问...",
+    "embeddedPlaceholder": "围绕“{{stage}}”补充要求或继续讨论…",
+    "embeddedStageFallback": "当前阶段",
     "placeholderDefault": "输入您的消息...",
     "disabled": "输入已禁用",
     "attachFiles": "附加文件",
@@ -153,7 +155,11 @@
   "session": {
     "continue": {
       "title": "继续您的对话",
-      "description": "询问有关代码的问题、请求更改或获取开发任务的帮助"
+      "description": "询问有关代码的问题、请求更改或获取开发任务的帮助",
+      "embeddedTitle": "{{stage}}：从这里开始",
+      "embeddedDescription": "补充当前阶段要求，或从下面的示例选择一个方向开始。",
+      "guideTitle": "你可以这样告诉科研助手",
+      "guideDescription": "点击示例会填入输入框，你可以修改细节后再发送。"
     },
     "loading": {
       "olderMessages": "正在加载更早的消息...",

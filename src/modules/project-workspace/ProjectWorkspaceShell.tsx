@@ -6,6 +6,7 @@ import type { ProjectWorkspaceShellProps } from '@/shared/types';
 import ProjectCommandPalette from '@/modules/project-workspace/ProjectCommandPalette';
 import ProjectMainRegion from '@/modules/project-workspace/ProjectMainRegion';
 import ProjectSidebarRegion from '@/modules/project-workspace/ProjectSidebarRegion';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 /** Rendered by ProjectWorkspaceRoute to lay out the workspace sidebar, main region and global overlays. */
 function ProjectWorkspaceShell({
@@ -20,7 +21,7 @@ function ProjectWorkspaceShell({
       style={{ bottom: 'var(--keyboard-height, 0px)' }}
     >
       <ProjectEffects navigate={navigate} />
-      <ProjectSidebarRegion isMobile={isMobile} />
+      {!IS_LLM4AD_EMBEDDED && <ProjectSidebarRegion isMobile={isMobile} />}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <ProjectMainRegion
@@ -31,8 +32,8 @@ function ProjectWorkspaceShell({
         />
       </div>
 
-      <ProjectCommandPalette />
-      <QuickSettingsPanel />
+      {!IS_LLM4AD_EMBEDDED && <ProjectCommandPalette />}
+      {!IS_LLM4AD_EMBEDDED && <QuickSettingsPanel />}
     </div>
   );
 }

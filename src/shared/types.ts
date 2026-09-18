@@ -198,8 +198,8 @@ export type SessionActivitySnapshot = {
  * One frame received from the chat websocket. The server guarantees every
  * frame carries a `kind` (provider message kinds plus gateway kinds such as
  * `chat_subscribed`, `session_upserted`, `loading_progress`,
- * `protocol_error`). The synthetic `websocket_reconnected` kind is injected
- * client-side when the socket re-opens after a drop.
+ * `protocol_error`). The synthetic `websocket_connected` kind is injected
+ * client-side after every successful socket handshake.
  */
 export type ServerEvent = {
   kind?: string;
@@ -1071,7 +1071,7 @@ export type WizardFormState = {
 /** The shared WebSocket connection and its send function, threaded through the workspace tree so descendants can exchange live session messages. */
 export type RealtimeProps = {
   ws: WebSocket | null;
-  sendMessage: (message: unknown) => void;
+  sendMessage: (message: unknown) => boolean;
 };
 
 /** Everything the project workspace shell and its regions need from the route: the realtime connection plus the current viewport mode and the router's navigate function. */

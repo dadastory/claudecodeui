@@ -178,6 +178,63 @@ test('Claude history attaches a subagent transcript stored under the session dir
   }
 });
 
+test('Claude history is available before the filesystem watcher indexes a new transcript', { concurrency: false }, async () => {
+  const tempHome = await mkdtemp(path.join(os.tmpdir(), 'claude-immediate-history-'));
+  const previousHome = process.env.HOME;
+  const appSessionId = 'app-session-immediate';
+  const providerSessionId = 'provider-session-immediate';
+  const projectPath = '/workspace/source';
+  const encodedProjectPath = projectPath.replace(/[^a-zA-Z0-9-]/g, '-');
+  const transcriptDirectory = path.join(tempHome, '.claude', 'projects', encodedProjectPath);
+  const transcriptPath = path.join(transcriptDirectory, `${providerSessionId}.jsonl`);
+
+  try {
+    process.env.HOME = tempHome;
+    await mkdir(transcriptDirectory, { recursive: true });
+    const rows = [
+      {
+        type: 'user',
+        uuid: 'user-immediate',
+        parentUuid: null,
+        sessionId: providerSessionId,
+        cwd: projectPath,
+        timestamp: '2026-09-14T05:00:00.000Z',
+        message: { role: 'user', content: [{ type: 'text', text: 'Immediate prompt' }] },
+      },
+      {
+        type: 'assistant',
+        uuid: 'assistant-immediate',
+        parentUuid: 'user-immediate',
+        sessionId: providerSessionId,
+        cwd: projectPath,
+        timestamp: '2026-09-14T05:00:01.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'Immediate answer' }] },
+      },
+    ];
+    await writeFile(transcriptPath, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8');
+
+    await withIsolatedDatabase(async () => {
+      sessionsDb.createAppSession(appSessionId, 'claude', projectPath, 'Immediate history');
+      sessionsDb.assignProviderSessionId(appSessionId, providerSessionId);
+      assert.equal(sessionsDb.getSessionById(appSessionId)?.jsonl_path, null);
+
+      const history = await new ClaudeSessionsProvider().fetchHistory(appSessionId, {
+        providerSessionId,
+      });
+
+      assert.equal(history.messages.some((message) => message.content === 'Immediate prompt'), true);
+      assert.equal(history.messages.some((message) => message.content === 'Immediate answer'), true);
+    });
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
 test('Claude history folds an agent task notification into the call that spawned it', { concurrency: false }, async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'claude-notification-'));
 
@@ -570,4 +627,81 @@ test('resolving an edit anchor skips rows that are not conversation turns', { co
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
+});
+
+test('compact summaries remain internal context instead of user-visible messages', () => {
+  const provider = new ClaudeSessionsProvider();
+  const summary = [
+    'This session is being continued from a previous conversation that ran out of context.',
+    'The summary below is internal continuation state.',
+  ].join('\n');
+
+  assert.deepEqual(
+    provider.normalizeMessage({
+      type: 'user',
+      uuid: 'compact-summary-1',
+      isCompactSummary: true,
+      message: { role: 'user', content: summary },
+    }, SESSION_ID),
+    [],
+  );
+  assert.deepEqual(
+    provider.normalizeMessage({
+      type: 'user',
+      uuid: 'compact-summary-live-1',
+      isSynthetic: true,
+      message: { role: 'user', content: summary },
+    }, SESSION_ID),
+    [],
+  );
+});
+
+/**
+ * The same summary, in the other content shape it arrives in.
+ *
+ * Claude writes the row as a plain string on some transcripts and as a `text`
+ * block array on others, and the check used to live inside the string branch
+ * only — so an array-shaped summary rendered as a user bubble until the next
+ * reload put the string form back in its place.
+ */
+test('compact summaries in a text-block array stay internal too', () => {
+  const provider = new ClaudeSessionsProvider();
+  const summaryText = [
+    'This session is being continued from a previous conversation that ran out of context.',
+    'The summary below is internal continuation state.',
+  ].join('\n');
+
+  // Flagged: the persisted transcript shape.
+  assert.deepEqual(
+    provider.normalizeMessage({
+      type: 'user',
+      uuid: 'compact-summary-array-1',
+      isCompactSummary: true,
+      message: { role: 'user', content: [{ type: 'text', text: summaryText }] },
+    }, SESSION_ID),
+    [],
+  );
+
+  // Unflagged but synthetic: the live SDK shape, where nothing but the content
+  // itself marks the row as compaction output.
+  assert.deepEqual(
+    provider.normalizeMessage({
+      type: 'user',
+      uuid: 'compact-summary-array-live-1',
+      isSynthetic: true,
+      message: { role: 'user', content: [{ type: 'text', text: summaryText }] },
+    }, SESSION_ID),
+    [],
+  );
+
+  // A real prompt that happens to be in the array shape is still a user
+  // message; the check must not swallow ordinary turns along with it.
+  const visible = provider.normalizeMessage({
+    type: 'user',
+    uuid: 'real-prompt-1',
+    message: { role: 'user', content: [{ type: 'text', text: 'please summarise the proposal' }] },
+  }, SESSION_ID);
+  assert.equal(visible.length, 1);
+  assert.equal(visible[0].role, 'user');
+  assert.equal(visible[0].content, 'please summarise the proposal');
 });

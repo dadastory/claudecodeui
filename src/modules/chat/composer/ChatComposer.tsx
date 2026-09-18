@@ -36,6 +36,7 @@ import { ScheduleMessagePopover } from '@/modules/chat/composer/ScheduleMessageP
 import { ScheduledMessageList } from '@/modules/chat/composer/ScheduledMessageList';
 import ComposerModelMenu from '@/modules/chat/composer/ComposerModelMenu';
 import ComposerPermissionMenu from '@/modules/chat/composer/ComposerPermissionMenu';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type MentionableFile = {
   name: string;
@@ -252,7 +253,9 @@ export default function ChatComposer({
   const hasActivityIndicator = Boolean(activity && !hasPendingPermissions);
 
   const hasQueuedDraft = Boolean(queuedDraft);
-  const canQueueDraft = isLoading && Boolean(input.trim() || attachedFiles.length > 0);
+  const canQueueDraft = isLoading && Boolean(
+    input.trim() || (!IS_LLM4AD_EMBEDDED && attachedFiles.length > 0),
+  );
   const submitHint = canQueueDraft
     ? hasQueuedDraft
       ? t('input.hintText.updateQueued', { defaultValue: 'Enter to update queued message' })
@@ -321,7 +324,7 @@ export default function ChatComposer({
       )}
 
       {!hasQuestionPanel && <div className="relative mx-auto max-w-[54.25rem]">
-        {showFileDropdown && filteredFiles.length > 0 && (
+        {!IS_LLM4AD_EMBEDDED && showFileDropdown && filteredFiles.length > 0 && (
           <div
             ref={fileDropdownRef}
             className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-48 overflow-y-auto rounded-xl border border-border/50 bg-card/95 shadow-lg backdrop-blur-md"
@@ -352,15 +355,17 @@ export default function ChatComposer({
           </div>
         )}
 
-        <CommandMenu
-          commands={filteredCommands}
-          selectedIndex={selectedCommandIndex}
-          onSelect={onCommandSelect}
-          onClose={onCloseCommandMenu}
-          position={commandMenuPosition}
-          isOpen={isCommandMenuOpen}
-          frequentCommands={frequentCommands}
-        />
+        {!IS_LLM4AD_EMBEDDED && (
+          <CommandMenu
+            commands={filteredCommands}
+            selectedIndex={selectedCommandIndex}
+            onSelect={onCommandSelect}
+            onClose={onCloseCommandMenu}
+            position={commandMenuPosition}
+            isOpen={isCommandMenuOpen}
+            frequentCommands={frequentCommands}
+          />
+        )}
 
         <PromptInput
           onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void}
@@ -369,9 +374,9 @@ export default function ChatComposer({
             isTextareaExpanded ? 'chat-input-expanded' : '',
             hasActivityIndicator ? 'rounded-t-none' : '',
           ].filter(Boolean).join(' ')}
-          {...getRootProps()}
+          {...(!IS_LLM4AD_EMBEDDED ? getRootProps() : {})}
         >
-          {isDragActive && (
+          {!IS_LLM4AD_EMBEDDED && isDragActive && (
             <div className="absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/50 bg-primary/15">
               <div className="rounded-xl border border-border/30 bg-card p-4 shadow-lg">
                 <svg className="mx-auto mb-2 h-8 w-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -387,7 +392,7 @@ export default function ChatComposer({
             </div>
           )}
 
-          {attachedFiles.length > 0 && (
+          {!IS_LLM4AD_EMBEDDED && attachedFiles.length > 0 && (
             <PromptInputHeader>
               <div className="rounded-xl bg-muted/40 p-2">
                 <div className="flex flex-wrap gap-2">
@@ -404,7 +409,7 @@ export default function ChatComposer({
             </PromptInputHeader>
           )}
 
-          <input {...getInputProps()} />
+          {!IS_LLM4AD_EMBEDDED && <input {...getInputProps()} />}
 
           <PromptInputBody>
             <div ref={inputHighlightRef} aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
@@ -420,7 +425,7 @@ export default function ChatComposer({
               onChange={onInputChange}
               onClick={onTextareaClick}
               onKeyDown={onTextareaKeyDown}
-              onPaste={onTextareaPaste}
+              onPaste={IS_LLM4AD_EMBEDDED ? undefined : onTextareaPaste}
               onScroll={(event) => onTextareaScrollSync(event.target as HTMLTextAreaElement)}
               onFocus={() => onInputFocusChange?.(true)}
               onBlur={() => onInputFocusChange?.(false)}
@@ -431,34 +436,40 @@ export default function ChatComposer({
 
         <PromptInputFooter className="flex-wrap gap-y-1">
           <PromptInputTools className="min-w-0">
-            <PromptInputButton
-              tooltip={{ content: t('input.attachFiles') }}
-              onClick={openAttachmentPicker}
-              aria-label={t('input.attachFiles')}
-            >
-              <PaperclipIcon />
-            </PromptInputButton>
+            {!IS_LLM4AD_EMBEDDED && (
+              <PromptInputButton
+                tooltip={{ content: t('input.attachFiles') }}
+                onClick={openAttachmentPicker}
+                aria-label={t('input.attachFiles')}
+              >
+                <PaperclipIcon />
+              </PromptInputButton>
+            )}
 
             {onVoiceTranscript && voiceAvailable && (
               <VoiceInputButton state={voiceState} onToggle={voiceToggle} errorMsg={voiceError} />
             )}
 
-            <TokenUsageSummary usage={tokenBudget} onClick={onShowTokenUsage} />
+            {!IS_LLM4AD_EMBEDDED && (
+              <TokenUsageSummary usage={tokenBudget} onClick={onShowTokenUsage} />
+            )}
 
-            <PromptInputButton
-              tooltip={{ content: t('input.showAllCommands') }}
-              onClick={onToggleCommandMenu}
-              className="relative"
-            >
-              <MessageSquareIcon />
-              {slashCommandsCount > 0 && (
-                <span
-                  className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground"
-                >
-                  {slashCommandsCount}
-                </span>
-              )}
-            </PromptInputButton>
+            {!IS_LLM4AD_EMBEDDED && (
+              <PromptInputButton
+                tooltip={{ content: t('input.showAllCommands') }}
+                onClick={onToggleCommandMenu}
+                className="relative"
+              >
+                <MessageSquareIcon />
+                {slashCommandsCount > 0 && (
+                  <span
+                    className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground"
+                  >
+                    {slashCommandsCount}
+                  </span>
+                )}
+              </PromptInputButton>
+            )}
 
             {hasInput && (
               <PromptInputButton
@@ -473,27 +484,33 @@ export default function ChatComposer({
           </PromptInputTools>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <ScheduleMessagePopover
-              disabled={!input.trim()}
-              onSchedule={onScheduleMessage}
-            />
+            {!IS_LLM4AD_EMBEDDED && (
+              <ScheduleMessagePopover
+                disabled={!input.trim()}
+                onSchedule={onScheduleMessage}
+              />
+            )}
 
-            <ComposerModelMenu
-              effort={effort}
-              effortOptions={availableEffortOptions}
-              onSelectEffort={onSelectEffort}
-              model={model}
-              modelOptions={availableModelOptions}
-              onSelectModel={onSelectModel}
-              modelsLoading={modelsLoading}
-            />
+            {!IS_LLM4AD_EMBEDDED && (
+              <>
+                <ComposerModelMenu
+                  effort={effort}
+                  effortOptions={availableEffortOptions}
+                  onSelectEffort={onSelectEffort}
+                  model={model}
+                  modelOptions={availableModelOptions}
+                  onSelectModel={onSelectModel}
+                  modelsLoading={modelsLoading}
+                />
 
-            <ComposerPermissionMenu
-              permissionMode={permissionMode}
-              permissionModes={availablePermissionModes}
-              onSelectPermissionMode={onSelectPermissionMode}
-              providerLabel={providerLabel}
-            />
+                <ComposerPermissionMenu
+                  permissionMode={permissionMode}
+                  permissionModes={availablePermissionModes}
+                  onSelectPermissionMode={onSelectPermissionMode}
+                  providerLabel={providerLabel}
+                />
+              </>
+            )}
 
             <PromptInputSubmit
               onClick={
@@ -518,7 +535,8 @@ export default function ChatComposer({
                     ? false
                     : isTranscribing
                       ? true
-                      : !input.trim() && attachedFiles.length === 0
+                      : !input.trim() &&
+                        (IS_LLM4AD_EMBEDDED || attachedFiles.length === 0)
               }
               aria-label={submitAriaLabel}
               title={submitAriaLabel}

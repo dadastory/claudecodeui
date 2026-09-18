@@ -4,6 +4,7 @@ import type { Dispatch, KeyboardEvent, RefObject, SetStateAction } from 'react';
 import { api } from '@/shared/api';
 import { escapeRegExp } from '@/modules/chat/utils/chatFormatting';
 import type { Project } from '@/shared/types';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type ProjectFileNode = {
   name: string;
@@ -57,6 +58,13 @@ export function useFileMentions({ selectedProject, input, setInput, textareaRef 
   const [atSymbolPosition, setAtSymbolPosition] = useState(-1);
 
   useEffect(() => {
+    if (IS_LLM4AD_EMBEDDED) {
+      setFileList([]);
+      setFilteredFiles([]);
+      setShowFileDropdown(false);
+      return undefined;
+    }
+
     const abortController = new AbortController();
 
     const fetchProjectFiles = async () => {

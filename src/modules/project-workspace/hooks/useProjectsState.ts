@@ -712,7 +712,7 @@ export function useProjectsState({
       // deltas, so anything that happened while the socket was down is missing
       // from it until something else forces a refresh. Chat re-syncs itself on
       // this event; the sidebar has to as well.
-      if (event.kind === 'websocket_reconnected') {
+      if (event.kind === 'websocket_connected' || event.kind === 'websocket_reconnected') {
         void refreshProjectsSilently();
         return;
       }
@@ -750,6 +750,7 @@ export function useProjectsState({
         && event.kind !== 'stream_end'
         && event.kind !== 'permission_resolved'
         && event.kind !== 'permission_cancelled'
+        && event.kind !== 'websocket_connected'
         && event.kind !== 'websocket_reconnected'
       ) {
         markSessionAttention(eventSessionId);

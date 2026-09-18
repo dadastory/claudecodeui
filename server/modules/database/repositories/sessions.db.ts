@@ -256,6 +256,33 @@ export const sessionsDb = {
     const db = getConnection();
 
     const merge = db.transaction(() => {
+      const current = db
+        .prepare(
+          `SELECT ${SESSION_ROW_COLUMNS} FROM sessions
+           WHERE session_id = ?
+           LIMIT 1`
+        )
+        .get(sessionId) as SessionRow | undefined;
+      const replacesExistingProvider = Boolean(
+        current?.provider_session_id && current.provider_session_id !== providerSessionId,
+      );
+
+      if (current?.provider_session_id && replacesExistingProvider) {
+        db.prepare(
+          `INSERT INTO superseded_provider_sessions (provider_session_id, provider, session_id, jsonl_path)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(provider_session_id, provider) DO UPDATE SET
+             session_id = excluded.session_id,
+             jsonl_path = excluded.jsonl_path,
+             created_at = CURRENT_TIMESTAMP`
+        ).run(
+          current.provider_session_id,
+          current.provider,
+          sessionId,
+          current.jsonl_path,
+        );
+      }
+
       const duplicate = db
         .prepare(
           `SELECT ${SESSION_ROW_COLUMNS} FROM sessions
@@ -270,20 +297,28 @@ export const sessionsDb = {
         db.prepare(
           `UPDATE sessions SET
              provider_session_id = ?,
-             jsonl_path = COALESCE(jsonl_path, ?),
+             jsonl_path = CASE WHEN ? THEN ? ELSE COALESCE(jsonl_path, ?) END,
              custom_name = COALESCE(custom_name, ?),
              updated_at = CURRENT_TIMESTAMP
            WHERE session_id = ?`
-        ).run(providerSessionId, duplicate.jsonl_path, duplicate.custom_name, sessionId);
+        ).run(
+          providerSessionId,
+          replacesExistingProvider ? 1 : 0,
+          duplicate.jsonl_path,
+          duplicate.jsonl_path,
+          duplicate.custom_name,
+          sessionId,
+        );
         return;
       }
 
       db.prepare(
         `UPDATE sessions SET
            provider_session_id = ?,
+           jsonl_path = CASE WHEN ? THEN NULL ELSE jsonl_path END,
            updated_at = CURRENT_TIMESTAMP
          WHERE session_id = ?`
-      ).run(providerSessionId, sessionId);
+      ).run(providerSessionId, replacesExistingProvider ? 1 : 0, sessionId);
     });
 
     merge();
@@ -292,11 +327,11 @@ export const sessionsDb = {
   /**
    * Moves one session onto a different provider session and transcript.
    *
-   * Only editing a message on a provider that has to branch to rewind (Codex)
-   * does this — an ordinary run keeps the same provider session for its whole
-   * life. `assignProviderSessionId` cannot be used for it: that one keeps the
-   * existing `jsonl_path` on purpose, so a session repointed with it would
-   * claim the new thread while still reading the old transcript.
+   * Editing a message on a provider that creates the branch transcript before
+   * starting its runtime (Codex) uses this path-aware operation. Other
+   * runtimes announce only a provider session id and use
+   * `assignProviderSessionId`, allowing the filesystem watcher to attach the
+   * transcript path before or after that announcement.
    *
    * The watcher may already have indexed the new transcript under its own id.
    * That row is the same conversation this one is about to become, so it is

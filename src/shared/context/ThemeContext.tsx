@@ -6,6 +6,7 @@ import {
   subscribeToUserPreferences,
   writeUserPreference,
 } from '@/shared/userSettings';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type ThemeContextValue = {
   isDarkMode: boolean;
@@ -49,6 +50,26 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
       setIsDarkMode(savedTheme === 'dark');
     }
   }), []);
+
+  useEffect(() => {
+    if (!IS_LLM4AD_EMBEDDED) {
+      return;
+    }
+    const handleAppearance = (event: MessageEvent) => {
+      if (
+        event.source !== window.parent ||
+        event.origin !== window.location.origin ||
+        event.data?.type !== 'llm4ad:appearance'
+      ) {
+        return;
+      }
+      if (event.data.theme === 'dark' || event.data.theme === 'light') {
+        setIsDarkMode(event.data.theme === 'dark');
+      }
+    };
+    window.addEventListener('message', handleAppearance);
+    return () => window.removeEventListener('message', handleAppearance);
+  }, []);
 
   // Applying the theme to the document and persisting it are deliberately
   // separate. Persisting from here would also fire on mount — before the stored

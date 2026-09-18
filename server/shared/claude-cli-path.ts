@@ -150,7 +150,7 @@ export function resolveClaudeCodeExecutablePath(
   const configuredExplicitly = Boolean(stripWrappingQuotes(configuredPath || ''));
   const normalizedPath = stripWrappingQuotes(configuredPath || DEFAULT_CLAUDE_COMMAND);
   if (deps.platform !== 'win32') {
-    return normalizedPath;
+    return configuredExplicitly ? normalizedPath : undefined;
   }
 
   return resolveWindowsClaudeExecutablePath(normalizedPath, configuredExplicitly, deps);

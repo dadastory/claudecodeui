@@ -10,6 +10,8 @@ import { handleDesktopNotificationsConnection } from '@/modules/notifications/in
 import type { AuthenticatedWebSocketRequest } from '@/shared/types.js';
 
 type WebSocketServerDependencies = {
+  embedded?: boolean;
+  embeddedToken?: string;
   verifyClient: Parameters<typeof verifyWebSocketClient>[1];
   chat: Parameters<typeof handleChatConnection>[2];
   shell: Parameters<typeof handleShellConnection>[1];
@@ -88,7 +90,15 @@ export function createWebSocketServer(
     server,
     verifyClient: ((
       info: Parameters<VerifyClientCallbackSync<AuthenticatedWebSocketRequest>>[0]
-    ) => verifyWebSocketClient(info, dependencies.verifyClient)),
+    ) => {
+      if (
+        dependencies.embedded
+        && info.req.headers['x-llm4ad-runtime-token'] !== dependencies.embeddedToken
+      ) {
+        return false;
+      }
+      return verifyWebSocketClient(info, dependencies.verifyClient);
+    }),
   });
 
   wss.on('connection', (ws, request) => {
@@ -97,6 +107,11 @@ export function createWebSocketServer(
     const incomingRequest = request as AuthenticatedWebSocketRequest;
     const url = incomingRequest.url ?? '/';
     const pathname = new URL(url, 'http://localhost').pathname;
+
+    if (dependencies.embedded && pathname !== '/ws') {
+      ws.close(1008, 'WebSocket route is unavailable in the embedded research runtime');
+      return;
+    }
 
     if (pathname === '/shell') {
       handleShellConnection(ws, dependencies.shell);

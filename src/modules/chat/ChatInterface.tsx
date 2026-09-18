@@ -26,13 +26,15 @@ import {
 import ChatMessagesPane from '@/modules/chat/transcript/ChatMessagesPane';
 import ChatComposer from '@/modules/chat/composer/ChatComposer';
 import CommandResultModal from '@/modules/chat/modals/CommandResultModal';
+import { useEmbeddedHostContext } from '@/shared/embeddedHostContext';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type ChatInterfaceProps = {
   isActive: boolean;
   selectedProject: Project | null;
   selectedSession: ProjectSession | null;
   ws: WebSocket | null;
-  sendMessage: (message: unknown) => void;
+  sendMessage: (message: unknown) => boolean;
   onFileOpen?: (filePath: string, diffInfo?: any) => void;
   onNavigateToSession?: (targetSessionId: string, options?: SessionNavigationOptions) => void;
   onSessionEstablished?: (sessionId: string, context: SessionEstablishedContext) => void;
@@ -71,6 +73,7 @@ function ChatInterface({
   const { tasksEnabled, isTaskMasterInstalled } = useTasksSettings();
   const { subscribe } = useWebSocket();
   const { t } = useTranslation('chat');
+  const embeddedHost = useEmbeddedHostContext();
   const processingSessions = useProcessingSessions();
   const {
     markSessionProcessing: onSessionProcessing,
@@ -136,8 +139,7 @@ function ChatInterface({
     isLoadingMoreMessages,
     hasMoreMessages,
     totalMessages,
-    isUserScrolledUp,
-    setIsUserScrolledUp,
+    isAtEnd,
     tokenBudget,
     setTokenBudget,
     visibleMessageCount,
@@ -153,6 +155,7 @@ function ChatInterface({
     scrollContainerRef,
     scrollToBottom,
     scrollToBottomAndReset,
+    followLatestMessage,
     handleScroll,
     requestLatestMessages,
   } = useChatSessionState({
@@ -249,9 +252,8 @@ function ChatInterface({
     onSessionEstablished: handleSessionEstablished,
     onFileOpen,
     onShowSettings,
-    scrollToBottom,
+    followLatestMessage,
     addMessage,
-    setIsUserScrolledUp,
     setPendingPermissionRequests,
     resolvePermissionModeForProvider,
   });
@@ -473,7 +475,7 @@ function ChatInterface({
         />
 
         <div className="relative flex-shrink-0">
-          {isUserScrolledUp && chatMessages.length > 0 && (
+          {!isAtEnd && chatMessages.length > 0 && (
             <div className="pointer-events-none absolute -top-11 left-0 right-0 z-20 flex justify-center">
               <button
                 type="button"
@@ -554,7 +556,11 @@ function ChatInterface({
           onTextareaInput={handleTextareaInput}
           isInputFocused={isInputFocused}
           onInputFocusChange={handleInputFocusChange}
-          placeholder={t('input.placeholder', { provider: selectedProviderLabel })}
+          placeholder={IS_LLM4AD_EMBEDDED
+            ? t('input.embeddedPlaceholder', {
+                stage: embeddedHost.stageTitle || t('input.embeddedStageFallback'),
+              })
+            : t('input.placeholder', { provider: selectedProviderLabel })}
           isTextareaExpanded={isTextareaExpanded}
           sendByCtrlEnter={sendByCtrlEnter}
         />

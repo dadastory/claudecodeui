@@ -73,6 +73,11 @@
     --header-base-padding: 8px;
     --header-total-padding: calc(var(--header-safe-area-top) + var(--header-base-padding));
   }
+
+  :root[data-llm4ad-embedded="true"] {
+    --nav-glass-blur: 0px;
+    --nav-glass-saturate: 1;
+  }
   
   /* Fallback for older iOS versions */
   @supports (padding-top: constant(safe-area-inset-top)) {
@@ -134,6 +139,10 @@
     -moz-osx-font-smoothing: grayscale;
     margin: 0;
     padding: 0;
+  }
+
+  :root[data-llm4ad-embedded="true"] body {
+    font-family: inherit;
   }
 
   html, body {

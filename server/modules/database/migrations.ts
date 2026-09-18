@@ -398,13 +398,16 @@ const rebuildSessionsTableWithProjectSchema = (db: Database): void => {
 const addProviderSessionIdMapping = (db: Database): void => {
   const sessionsTableInfo = getTableInfo(db, 'sessions');
   const columnNames = sessionsTableInfo.map((column) => column.name);
+  const needsProviderSessionIdColumn = !columnNames.includes('provider_session_id');
 
   addColumnToTableIfNotExists(db, 'sessions', columnNames, 'provider_session_id', 'TEXT');
-  db.exec(`
-    UPDATE sessions
-    SET provider_session_id = session_id
-    WHERE provider_session_id IS NULL
-  `);
+  if (needsProviderSessionIdColumn) {
+    db.exec(`
+      UPDATE sessions
+      SET provider_session_id = session_id
+      WHERE provider_session_id IS NULL
+    `);
+  }
 };
 
 /**

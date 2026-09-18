@@ -37,13 +37,20 @@ vi.mock('@/shared/api', () => {
         preferences: () => okJson({ success: true, preferences: {} }),
         savePreferences: () => okJson({ success: true, preferences: {} }),
       },
+      getFiles: () => okJson([]),
       commands: { list: () => okJson({ success: true, commands: [] }) },
       files: { search: () => okJson({ success: true, files: [] }) },
+      providers: {
+        skills: () => okJson({ success: true, data: { skills: [] } }),
+      },
     },
   };
 });
 
-const renderComposer = (selectedSession: ProjectSession | null) => renderHook(
+const renderComposer = (
+  selectedSession: ProjectSession | null,
+  sendMessage: (message: unknown) => boolean = () => true,
+) => renderHook(
   ({ session }: { session: ProjectSession | null }) => useChatComposerState({
     selectedProject: PROJECT,
     selectedSession: session,
@@ -57,10 +64,9 @@ const renderComposer = (selectedSession: ProjectSession | null) => renderHook(
     isLoading: false,
     canAbortSession: false,
     tokenBudget: null,
-    sendMessage: () => undefined,
-    scrollToBottom: () => undefined,
+    sendMessage,
+    followLatestMessage: () => undefined,
     addMessage: () => undefined,
-    setIsUserScrolledUp: () => undefined,
     setPendingPermissionRequests: () => undefined,
   }),
   { initialProps: { session: selectedSession } },
@@ -159,4 +165,18 @@ test('clearing the composer clears that session\'s stored draft', async () => {
   });
 
   assert.equal(readDraftText('session-a'), '');
+});
+
+test('a disconnected websocket leaves the submitted draft available to retry', async () => {
+  const view = renderComposer({ id: 'session-a' }, () => false);
+
+  await act(async () => {
+    view.result.current.setInput('retry after reconnect');
+  });
+  await act(async () => {
+    await view.result.current.handleSubmit({ preventDefault: () => undefined } as never);
+  });
+
+  assert.equal(view.result.current.input, 'retry after reconnect');
+  assert.equal(readDraftText('session-a'), 'retry after reconnect');
 });

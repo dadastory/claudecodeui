@@ -111,8 +111,8 @@ test('resolveClaudeCodeExecutablePath still resolves the native exe when both in
   assert.equal(resolved, nativePath);
 });
 
-test('resolveClaudeCodeExecutablePath leaves non-Windows platforms on the bare command', () => {
+test('resolveClaudeCodeExecutablePath lets the SDK choose its bundled binary on non-Windows', () => {
   const resolved = resolveClaudeCodeExecutablePath(undefined, { platform: 'linux' });
 
-  assert.equal(resolved, 'claude');
+  assert.equal(resolved, undefined);
 });

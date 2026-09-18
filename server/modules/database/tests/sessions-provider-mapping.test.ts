@@ -70,6 +70,19 @@ test('app sessions get the provider id assigned without creating a duplicate row
   });
 });
 
+test('database reinitialization keeps pending app sessions detached from provider sessions', async () => {
+  await withIsolatedDatabase(async () => {
+    sessionsDb.createAppSession('pending-app-id', 'claude', '/workspace/demo', 'Pending turn');
+
+    closeConnection();
+    await initializeDatabase();
+
+    const row = sessionsDb.getSessionById('pending-app-id');
+    assert.equal(row?.provider_session_id, null);
+    assert.equal(row?.jsonl_path, null);
+  });
+});
+
 test('assignProviderSessionId merges a watcher-created duplicate into the app row', async () => {
   await withIsolatedDatabase(() => {
     sessionsDb.createAppSession('app-id-2', 'codex', '/workspace/demo');
@@ -96,6 +109,45 @@ test('assignProviderSessionId merges a watcher-created duplicate into the app ro
     // Transcript path and name from the duplicate are adopted.
     assert.equal(rows[0]?.jsonl_path, '/fake/provider-race.jsonl');
     assert.equal(rows[0]?.custom_name, 'Watcher Name');
+  });
+});
+
+test('assignProviderSessionId moves an app session onto a replacement provider branch', async () => {
+  await withIsolatedDatabase(() => {
+    sessionsDb.createAppSession('app-edit', 'claude', '/workspace/demo', 'Edited conversation');
+    sessionsDb.assignProviderSessionId('app-edit', 'provider-before-edit');
+    sessionsDb.createSession(
+      'provider-before-edit',
+      'claude',
+      '/workspace/demo',
+      'Old branch',
+      undefined,
+      undefined,
+      '/fake/provider-before-edit.jsonl',
+    );
+
+    // Editing the first prompt starts a fresh Claude session. The watcher can
+    // discover that replacement transcript before the runtime reports its id.
+    sessionsDb.createSession(
+      'provider-after-edit',
+      'claude',
+      '/workspace/demo',
+      'New branch',
+      undefined,
+      undefined,
+      '/fake/provider-after-edit.jsonl',
+    );
+    sessionsDb.assignProviderSessionId('app-edit', 'provider-after-edit');
+
+    const rows = sessionsDb.getAllSessions();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.session_id, 'app-edit');
+    assert.equal(rows[0]?.provider_session_id, 'provider-after-edit');
+    assert.equal(rows[0]?.jsonl_path, '/fake/provider-after-edit.jsonl');
+    assert.equal(
+      sessionsDb.isProviderSessionSuperseded('provider-before-edit', 'claude'),
+      true,
+    );
   });
 });
 

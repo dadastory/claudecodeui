@@ -15,6 +15,7 @@ import { EditorSidebar, useEditorSidebar } from '@/modules/code-editor';
 import WorkspaceHeader from '@/modules/project-workspace/WorkspaceHeader';
 import WorkspaceStateView from '@/modules/project-workspace/WorkspaceStateView';
 import WorkspaceErrorBoundary from '@/modules/project-workspace/WorkspaceErrorBoundary';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type WorkspaceMainProps = {
   selectedProject: Project | null;
@@ -22,7 +23,7 @@ type WorkspaceMainProps = {
   activeTab: AppTab;
   setActiveTab: Dispatch<SetStateAction<AppTab>>;
   ws: WebSocket | null;
-  sendMessage: (message: unknown) => void;
+  sendMessage: (message: unknown) => boolean;
   isMobile: boolean;
   onMenuClick: () => void;
   isLoading: boolean;
@@ -66,6 +67,12 @@ function WorkspaceMain({
 
   const shouldShowTasksTab = Boolean(tasksEnabled && isTaskMasterInstalled);
   const shouldShowBrowserTab = browserUseEnabled;
+
+  useEffect(() => {
+    if (IS_LLM4AD_EMBEDDED && activeTab !== 'chat') {
+      setActiveTab('chat');
+    }
+  }, [activeTab, setActiveTab]);
 
   const {
     editingFile,
@@ -129,16 +136,18 @@ function WorkspaceMain({
 
   return (
     <div className="flex h-full flex-col">
-      <WorkspaceHeader
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        selectedProject={selectedProject}
-        selectedSession={selectedSession}
-        shouldShowTasksTab={shouldShowTasksTab}
-        shouldShowBrowserTab={shouldShowBrowserTab}
-        isMobile={isMobile}
-        onMenuClick={onMenuClick}
-      />
+      {!IS_LLM4AD_EMBEDDED && (
+        <WorkspaceHeader
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          selectedProject={selectedProject}
+          selectedSession={selectedSession}
+          shouldShowTasksTab={shouldShowTasksTab}
+          shouldShowBrowserTab={shouldShowBrowserTab}
+          isMobile={isMobile}
+          onMenuClick={onMenuClick}
+        />
+      )}
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className={`flex min-h-0 min-w-[200px] flex-col overflow-hidden ${editorExpanded ? 'hidden' : ''} flex-1`}>
@@ -150,7 +159,7 @@ function WorkspaceMain({
                 selectedSession={selectedSession}
                 ws={ws}
                 sendMessage={sendMessage}
-                onFileOpen={handleFileOpen}
+                onFileOpen={IS_LLM4AD_EMBEDDED ? undefined : handleFileOpen}
                 onNavigateToSession={onNavigateToSession}
                 onSessionEstablished={onSessionEstablished}
                 onShowSettings={onShowSettings}
@@ -212,19 +221,21 @@ function WorkspaceMain({
           )}
         </div>
 
-        <EditorSidebar
-          editingFile={editingFile}
-          isMobile={isMobile}
-          editorExpanded={editorExpanded}
-          editorWidth={editorWidth}
-          hasManualWidth={hasManualWidth}
-          resizeHandleRef={resizeHandleRef}
-          onResizeStart={handleResizeStart}
-          onCloseEditor={handleCloseEditor}
-          onToggleEditorExpand={handleToggleEditorExpand}
-          projectPath={selectedProject.path}
-          fillSpace={activeTab === 'files'}
-        />
+        {!IS_LLM4AD_EMBEDDED && (
+          <EditorSidebar
+            editingFile={editingFile}
+            isMobile={isMobile}
+            editorExpanded={editorExpanded}
+            editorWidth={editorWidth}
+            hasManualWidth={hasManualWidth}
+            resizeHandleRef={resizeHandleRef}
+            onResizeStart={handleResizeStart}
+            onCloseEditor={handleCloseEditor}
+            onToggleEditorExpand={handleToggleEditorExpand}
+            projectPath={selectedProject.path}
+            fillSpace={activeTab === 'files'}
+          />
+        )}
       </div>
     </div>
   );

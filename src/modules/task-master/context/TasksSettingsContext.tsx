@@ -7,6 +7,7 @@ import {
   subscribeToUserPreferences,
   writeUserPreference,
 } from '@/shared/userSettings';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type TaskMasterInstallationStatus = {
   isReady?: boolean;
@@ -55,7 +56,9 @@ export const useTasksSettings = () => {
 /** Mounted by App.tsx; supplies the tasks-enabled preference and TaskMaster installation status that the chat, sidebar, settings and project-workspace modules read through useTasksSettings. */
 export const TasksSettingsProvider = ({ children }: { children: ReactNode }) => {
   const [tasksEnabled, setTasksEnabled] = useState<boolean>(
-    () => readUserPreference('tasksEnabled', TASKS_ENABLED_DEFAULT),
+    () => IS_LLM4AD_EMBEDDED
+      ? false
+      : readUserPreference('tasksEnabled', TASKS_ENABLED_DEFAULT),
   );
 
   const [isTaskMasterInstalled, setIsTaskMasterInstalled] = useState<boolean | null>(null);
@@ -82,6 +85,12 @@ export const TasksSettingsProvider = ({ children }: { children: ReactNode }) => 
 
   // Check TaskMaster installation status asynchronously on component mount
   useEffect(() => {
+    if (IS_LLM4AD_EMBEDDED) {
+      setIsTaskMasterInstalled(false);
+      setIsTaskMasterReady(false);
+      setIsCheckingInstallation(false);
+      return;
+    }
     const checkInstallation = async () => {
       try {
         const response = await api.taskmaster.installationStatus();

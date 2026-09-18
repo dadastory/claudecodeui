@@ -5,6 +5,7 @@ import {
 } from '@/shared/authToken';
 import { IS_PLATFORM } from '@/shared/utils';
 import { readVoiceConfig, voiceConfigHeaders } from '@/shared/voiceConfig';
+import { resolveEmbeddedHttpUrl } from '@/shared/embeddedRuntime';
 
 // Headers are a plain record rather than the full `HeadersInit` union so the
 // defaults below can be merged with a caller's headers by spreading.
@@ -30,7 +31,7 @@ export const authenticatedFetch = (
     defaultHeaders['Authorization'] = `Bearer ${token}`;
   }
 
-  return fetch(url, {
+  return fetch(resolveEmbeddedHttpUrl(url), {
     ...options,
     headers: {
       ...defaultHeaders,
@@ -140,17 +141,23 @@ export const sessionMessagesUrl = (
   sessionId: string,
   { limit = null, offset = 0 }: { limit?: number | null; offset?: number } = {},
 ): string => {
-  const base = `/api/providers/sessions/${encodeURIComponent(sessionId)}/messages`;
+  const base = resolveEmbeddedHttpUrl(
+    `/api/providers/sessions/${encodeURIComponent(sessionId)}/messages`,
+  );
   return limit === null || limit === undefined
     ? base
     : `${base}${query({ limit, offset: offset ?? 0 })}`;
 };
 
 const fileContentPath = (projectId: string, filePath: string) =>
-  `/api/file-tree/projects/${projectId}/files/content${query({ path: filePath })}`;
+  resolveEmbeddedHttpUrl(
+    `/api/file-tree/projects/${projectId}/files/content${query({ path: filePath })}`,
+  );
 
 const pluginAssetPath = (pluginName: string, assetFile: string) =>
-  `/api/plugins/${encodeURIComponent(pluginName)}/assets/${encodeURIComponent(assetFile)}`;
+  resolveEmbeddedHttpUrl(
+    `/api/plugins/${encodeURIComponent(pluginName)}/assets/${encodeURIComponent(assetFile)}`,
+  );
 
 // ─── API endpoints ──────────────────────────────────────────────────────────
 // Every `/api/...` path the frontend talks to is declared here; components
@@ -159,13 +166,13 @@ const pluginAssetPath = (pluginName: string, assetFile: string) =>
 export const api = {
   // Auth endpoints (no token required)
   auth: {
-    status: () => fetch('/api/auth/status'),
-    login: (username: string, password: string) => fetch('/api/auth/login', {
+    status: () => fetch(resolveEmbeddedHttpUrl('/api/auth/status')),
+    login: (username: string, password: string) => fetch(resolveEmbeddedHttpUrl('/api/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
     }),
-    register: (username: string, password: string) => fetch('/api/auth/register', {
+    register: (username: string, password: string) => fetch(resolveEmbeddedHttpUrl('/api/auth/register'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),

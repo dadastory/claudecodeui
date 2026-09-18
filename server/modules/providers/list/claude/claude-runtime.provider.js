@@ -37,6 +37,7 @@ import {
   notifyUserIfEnabled
 } from '@/modules/notifications/index.js';
 import { createCompleteMessage, createNormalizedMessage } from '@/shared/utils.js';
+import { getEmbeddedRuntimeProfile } from '@/shared/embeddedProfile.js';
 
 const activeSessions = new Map();
 const pendingToolApprovals = new Map();
@@ -215,14 +216,128 @@ function matchesToolPermission(entry, toolName, input) {
   return false;
 }
 
+/**
+ * Resolves a tool's path argument, whether absolute or workspace-relative.
+ *
+ * `path.resolve(root, candidate)` is wrong here for two reasons, and both bite:
+ * for an absolute candidate it ignores the root and happens to work, but for a
+ * relative one it resolves against the *server process* cwd, not the workspace,
+ * so `sections/02.typ` came out as `/app/sections/02.typ` and was denied. The
+ * guard is meant to judge where the agent is pointing, so the workspace is what
+ * a relative path is relative to.
+ */
+function resolveToolPath(rootPath, candidatePath) {
+  const root = path.resolve(rootPath);
+  if (path.isAbsolute(candidatePath)) {
+    return path.resolve(candidatePath);
+  }
+  return path.resolve(root, candidatePath);
+}
+
+function isPathInside(rootPath, candidatePath) {
+  const root = path.resolve(rootPath);
+  const candidate = resolveToolPath(rootPath, candidatePath);
+  return candidate === root || candidate.startsWith(`${root}${path.sep}`);
+}
+
+/** Readable roots: the source tree, plus whatever the profile adds. */
+function readableRootsOf(profile) {
+  const roots = [profile.workspaceRoot, ...(profile.readableRoots || [])];
+  return roots.filter((root) => typeof root === 'string' && root);
+}
+
+/**
+ * Whether one embedded-research file tool call is inside its stage boundary.
+ *
+ * Reads and writes are checked separately because they are genuinely different
+ * boundaries. A stage writes only the source paths assigned to it, but it reads
+ * much more than that — earlier stages' output, its skill files, the persisted
+ * session, attached project documents — and holding reads to the write
+ * boundary made every stage fail once it looked at anything outside its own
+ * files. Reads are bounded by `readableRoots`, writes by `writablePaths`.
+ *
+ * Returns true (allowed) for anything this boundary does not govern, so a tool
+ * added later is not silently blocked by a check that never considered it.
+ */
+function isEmbeddedFileToolAllowed(profile, toolName, input) {
+  if (!profile?.workspaceRoot || !input || typeof input !== 'object') {
+    return true;
+  }
+  if (!['Read', 'Glob', 'Grep', 'Write', 'Edit'].includes(toolName)) {
+    return true;
+  }
+
+  const isSearchTool = toolName === 'Glob' || toolName === 'Grep';
+  const field = isSearchTool ? 'path' : 'file_path';
+  const suppliedPath = input[field];
+
+  if (['Read', 'Glob', 'Grep'].includes(toolName)) {
+    // A search with no `path` defaults to the workspace, which is inside the
+    // readable roots by construction.
+    if (isSearchTool && typeof suppliedPath !== 'string') {
+      return isPathInside(profile.workspaceRoot, profile.workspaceRoot);
+    }
+    if (typeof suppliedPath !== 'string' || !suppliedPath) {
+      return false;
+    }
+    return readableRootsOf(profile).some((root) => isPathInside(root, suppliedPath));
+  }
+
+  if (typeof suppliedPath !== 'string' || !suppliedPath) {
+    return false;
+  }
+  if (!isPathInside(profile.workspaceRoot, suppliedPath)) {
+    return false;
+  }
+
+  return (profile.writablePaths || []).some((allowedPath) => {
+    if (typeof allowedPath !== 'string' || !allowedPath) {
+      return false;
+    }
+    const allowed = path.resolve(profile.workspaceRoot, allowedPath);
+    const candidate = resolveToolPath(profile.workspaceRoot, suppliedPath);
+    return allowedPath.endsWith('/')
+      ? candidate === allowed || candidate.startsWith(`${allowed}${path.sep}`)
+      : candidate === allowed;
+  });
+}
+
+/**
+ * Build the SDK hook that enforces an embedded research stage's file boundary.
+ *
+ * The SDK may auto-approve tools listed in `allowedTools` without invoking
+ * `canUseTool`. `PreToolUse` always runs before that permission decision, so it
+ * is the authoritative boundary for research workspace file access.
+ */
+export function createEmbeddedFileBoundaryHook(profile) {
+  return async (input) => {
+    if (isEmbeddedFileToolAllowed(profile, input?.tool_name, input?.tool_input)) {
+      return {};
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'Tool path is outside the active research stage boundary',
+      },
+    };
+  };
+}
+
 function mapCliOptionsToSDK(options = {}) {
   const { providerSessionId, cwd, toolsSettings, permissionMode, effort, resumeAnchorId, resumeFromScratch } = options;
 
   const sdkOptions = {};
+  const embeddedProfile = getEmbeddedRuntimeProfile(options.sessionId);
+  const effectivePermissionMode = embeddedProfile?.permissionMode || permissionMode;
 
   // Forward all host env vars (e.g. ANTHROPIC_BASE_URL) to the subprocess.
   // Since SDK 0.2.113, options.env replaces process.env instead of overlaying it.
-  sdkOptions.env = { ...process.env, CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: String(BG_WAIT_CEILING_MS) };
+  sdkOptions.env = {
+    ...process.env,
+    ...(embeddedProfile?.env || {}),
+    CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: String(BG_WAIT_CEILING_MS)
+  };
 
   // Resolve the executable eagerly on Windows because the SDK uses raw child_process.spawn,
   // which does not reliably follow npm's shell wrappers like cross-spawn does.
@@ -237,23 +352,23 @@ function mapCliOptionsToSDK(options = {}) {
     sdkOptions.cwd = cwd;
   }
 
-  if (permissionMode && permissionMode !== 'default') {
-    sdkOptions.permissionMode = permissionMode;
+  if (effectivePermissionMode && effectivePermissionMode !== 'default') {
+    sdkOptions.permissionMode = effectivePermissionMode;
   }
 
-  const settings = toolsSettings || {
+  const settings = embeddedProfile?.toolsSettings || toolsSettings || {
     allowedTools: [],
     disallowedTools: [],
     skipPermissions: false
   };
 
-  if (settings.skipPermissions && permissionMode !== 'plan') {
+  if (settings.skipPermissions && effectivePermissionMode !== 'plan') {
     sdkOptions.permissionMode = 'bypassPermissions';
   }
 
   let allowedTools = [...(settings.allowedTools || [])];
 
-  if (permissionMode === 'plan') {
+  if (effectivePermissionMode === 'plan') {
     const planModeTools = ['Read', 'Task', 'exit_plan_mode', 'TodoRead', 'TodoWrite', 'WebFetch', 'WebSearch'];
     for (const tool of planModeTools) {
       if (!allowedTools.includes(tool)) {
@@ -271,7 +386,7 @@ function mapCliOptionsToSDK(options = {}) {
 
   sdkOptions.disallowedTools = settings.disallowedTools || [];
 
-  sdkOptions.model = options.model || CLAUDE_PREDEFINED_MODELS.DEFAULT;
+  sdkOptions.model = embeddedProfile?.model || options.model || CLAUDE_PREDEFINED_MODELS.DEFAULT;
 
   applyClaudeEffort(sdkOptions, resolveClaudeEffort(
     sdkOptions.model,
@@ -281,10 +396,40 @@ function mapCliOptionsToSDK(options = {}) {
 
   sdkOptions.systemPrompt = {
     type: 'preset',
-    preset: 'claude_code'
+    preset: 'claude_code',
+    ...(embeddedProfile?.systemPromptAppend ? { append: embeddedProfile.systemPromptAppend } : {})
   };
 
-  sdkOptions.settingSources = ['project', 'user', 'local'];
+  sdkOptions.settingSources = embeddedProfile ? ['user'] : ['project', 'user', 'local'];
+  if (embeddedProfile?.skills?.length) {
+    sdkOptions.skills = embeddedProfile.skills;
+  }
+  if (embeddedProfile?.contextWindowTokens) {
+    sdkOptions.settings = {
+      ...(sdkOptions.settings || {}),
+      autoCompactEnabled: true,
+      autoCompactWindow: embeddedProfile.contextWindowTokens
+    };
+  }
+  if (embeddedProfile) {
+    // A research stage is one bounded job, not a standing collaborator, so it
+    // gets no long-lived memory. Auto-memory is on by default and points at
+    // ~/.claude/projects/<cwd>/memory/ — the runtime home, deliberately outside
+    // the source tree the stage owns. The agent then reads MEMORY.md as part of
+    // its standing instructions and is denied by this stage's file boundary,
+    // which surfaces as a failed Read at the start of every stage.
+    //
+    // Turning it off is the correct fix rather than widening the boundary:
+    // nothing in a stage's own source tree is remembered across runs, so
+    // memories written by one stage would leak into the next stage's context as
+    // unattributable prior conclusions. The stage's inputs come from its
+    // persisted artifact and the earlier stages' documents, which are the
+    // authoritative sources anyway.
+    sdkOptions.settings = {
+      ...(sdkOptions.settings || {}),
+      autoMemoryEnabled: false
+    };
+  }
 
   // The SDK resumes with the provider-native session id, never the app id.
   // `resumeFromScratch` is set when the very first prompt of a conversation was
@@ -699,8 +844,10 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
   // provider-native id recorded on the session row.
   const providerSessionId = context.resolveProviderSessionId(sessionId);
   // Provider-native id as the SDK reports it (starts as the resume id, or is
-  // captured from the stream for brand-new sessions).
-  let capturedSessionId = providerSessionId;
+  // captured from the stream for brand-new and first-message edit sessions).
+  // Editing the first prompt starts a replacement Claude session rather than
+  // resuming the previous one, so its new id must be captured from the stream.
+  let capturedSessionId = options.resumeFromScratch ? null : providerSessionId;
   let sessionCreatedSent = false;
   // Process-map key: the app session id when the caller supplied one, else
   // the provider-native id once captured (legacy/direct API callers).
@@ -771,9 +918,13 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
       effortModels,
     });
 
+    const embeddedProfile = getEmbeddedRuntimeProfile(sessionId);
     const mcpServers = await loadMcpConfig(options.cwd);
-    if (mcpServers) {
-      sdkOptions.mcpServers = mcpServers;
+    if (mcpServers || embeddedProfile?.mcpServers) {
+      sdkOptions.mcpServers = {
+        ...(mcpServers || {}),
+        ...(embeddedProfile?.mcpServers || {})
+      };
     }
 
     // Every turn uses streaming input so stdin stays open past the turn's
@@ -782,6 +933,12 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
     const promptMessages = await buildPromptMessages(command, options.images, options.files, options.cwd);
 
     sdkOptions.hooks = {
+      ...(embeddedProfile?.workspaceRoot ? {
+        PreToolUse: [{
+          matcher: 'Read|Glob|Grep|Write|Edit',
+          hooks: [createEmbeddedFileBoundaryHook(embeddedProfile)],
+        }],
+      } : {}),
       Notification: [{
         matcher: '',
         hooks: [async (input) => {
@@ -810,6 +967,10 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
     // to work in those modes.
     sdkOptions.canUseTool = async (toolName, input, context) => {
       const requiresInteraction = TOOLS_REQUIRING_INTERACTION.has(toolName);
+
+      if (!isEmbeddedFileToolAllowed(embeddedProfile, toolName, input)) {
+        return { behavior: 'deny', message: 'Tool path is outside the active research stage boundary' };
+      }
 
       if (!requiresInteraction) {
         if (sdkOptions.permissionMode === 'bypassPermissions') {
@@ -900,6 +1061,9 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
       // Older/newer SDK versions may not accept hook shapes yet.
       // Keep notification behavior operational via runtime events even if hook registration fails.
       console.warn('Failed to initialize Claude query with hooks, retrying without hooks:', hookError?.message || hookError);
+      if (embeddedProfile?.workspaceRoot) {
+        throw hookError;
+      }
       delete sdkOptions.hooks;
       // Discard the abandoned stream and build a fresh one for the retry.
       heldPrompt.release();

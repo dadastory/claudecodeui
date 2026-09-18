@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { api } from '@/shared/api';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 /** Tracks whether the Browser Use workspace is enabled in server settings. */
 export function useBrowserUseEnabled() {
   const [browserUseEnabled, setBrowserUseEnabled] = useState(false);
 
   const loadBrowserUseSettings = useCallback(async () => {
+    if (IS_LLM4AD_EMBEDDED) {
+      setBrowserUseEnabled(false);
+      return;
+    }
     try {
       const response = await api.browserUse.settings();
       const data = await response.json();
@@ -21,6 +26,7 @@ export function useBrowserUseEnabled() {
   }, []);
 
   useEffect(() => {
+    if (IS_LLM4AD_EMBEDDED) return;
     void loadBrowserUseSettings();
     window.addEventListener('browserUseSettingsChanged', loadBrowserUseSettings);
     return () => window.removeEventListener('browserUseSettingsChanged', loadBrowserUseSettings);

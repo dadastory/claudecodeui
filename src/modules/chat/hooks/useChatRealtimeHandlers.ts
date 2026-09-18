@@ -109,6 +109,7 @@ export function useChatRealtimeHandlers({
       }
 
       switch (msg.kind) {
+        case 'websocket_connected':
         case 'websocket_reconnected':
           onWebSocketReconnect?.();
           return;
