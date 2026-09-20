@@ -5,6 +5,7 @@ import fs, { promises as fsPromises } from 'fs';
 import path from 'path';
 import os from 'os';
 import http from 'http';
+import { randomUUID } from 'node:crypto';
 
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
@@ -15,7 +16,7 @@ import {
     initializeSessionsWatcher,
     providerRuntimeService,
 } from '@/modules/providers/index.js';
-import { createWebSocketServer } from '@/modules/websocket/index.js';
+import { connectedClients, createWebSocketServer, WS_OPEN_STATE } from '@/modules/websocket/index.js';
 
 import { getConnectableHost } from '../shared/networkHosts.js';
 
@@ -184,6 +185,41 @@ if (IS_LLM4AD_EMBEDDED) {
                 error: error instanceof Error ? error.message : 'Could not configure runtime profile',
             });
         }
+    });
+
+    // 平台事件注入：模型网关异常/恢复时，平台后端把一条紧凑通知实时送进当前会话。
+    // 复用 `task_notification` kind —— 前端已把它渲染为对话流内的内联通知条，
+    // 且它不参与 transcript 持久化（页面刷新后由平台侧在下次失败/重连时再次注入）。
+    app.put('/internal/session-notice', (req, res) => {
+        if (req.headers['x-llm4ad-runtime-token'] !== process.env.LLM4AD_RUNTIME_TOKEN) {
+            return res.status(401).json({ error: 'Invalid runtime service token' });
+        }
+        const body = (req.body ?? {}) as {
+            sessionId?: unknown;
+            summary?: unknown;
+            status?: unknown;
+        };
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
+        const summary = typeof body.summary === 'string' ? body.summary.trim() : '';
+        if (!sessionId || !summary) {
+            return res.status(422).json({ error: 'sessionId and summary are required' });
+        }
+        const status = body.status === 'completed' ? 'completed' : 'failed';
+        const payload = JSON.stringify({
+            kind: 'task_notification',
+            id: `platform_notice_${randomUUID()}`,
+            sessionId,
+            timestamp: new Date().toISOString(),
+            provider: 'claude',
+            summary,
+            status,
+        });
+        for (const client of connectedClients) {
+            if (client.readyState === WS_OPEN_STATE) {
+                client.send(payload);
+            }
+        }
+        return res.json({ success: true, sessionId, delivered: connectedClients.size });
     });
 
     app.use((req, res, next) => {
