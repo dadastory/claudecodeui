@@ -1,12 +1,14 @@
 import { useSyncExternalStore } from 'react';
 
 type EmbeddedHostContext = {
+  stage: string;
   stageTitle: string;
   stageDescription: string;
   stageExamples: string[];
 };
 
 const EMPTY_CONTEXT: EmbeddedHostContext = {
+  stage: '',
   stageTitle: '',
   stageDescription: '',
   stageExamples: [],
@@ -32,11 +34,13 @@ export function updateEmbeddedHostContext(value: unknown): void {
   if (!value || typeof value !== 'object') return;
   const record = value as Record<string, unknown>;
   const nextContext = {
+    stage: normalizedText(record.stage, 64),
     stageTitle: normalizedText(record.stageTitle, 160),
     stageDescription: normalizedText(record.stageDescription, 1000),
     stageExamples: normalizedTextList(record.stageExamples, 3, 600),
   };
   if (
+    nextContext.stage === currentContext.stage &&
     nextContext.stageTitle === currentContext.stageTitle &&
     nextContext.stageDescription === currentContext.stageDescription &&
     nextContext.stageExamples.length === currentContext.stageExamples.length &&

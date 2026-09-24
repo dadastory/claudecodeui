@@ -177,6 +177,31 @@ describe('truncateAt', () => {
     );
   });
 
+  it('keeps the completed reply after the edited user message', async () => {
+    const { result } = await loadedStore();
+
+    act(() => {
+      result.current.appendRealtime('session-1', {
+        ...row('5', 'second prompt, corrected'),
+        role: 'user',
+        replacesAnchorId: 'u2',
+      } as NormalizedMessage);
+      result.current.truncateAt('session-1', 'u2');
+      result.current.appendRealtime('session-1', {
+        ...row('6', 'answer to the corrected prompt'),
+        role: 'assistant',
+        // A branched provider can report a timestamp from before the local
+        // optimistic echo. Causal turn order still puts this reply after it.
+        timestamp: '2026-01-01T00:00:04.500Z',
+      } as NormalizedMessage);
+    });
+
+    assert.deepEqual(
+      result.current.getMessages('session-1').map((message) => message.content),
+      ['first prompt', 'first answer', 'second prompt, corrected', 'answer to the corrected prompt'],
+    );
+  });
+
   it('keeps only the newest replacement when an earlier attempt was refused', async () => {
     const { result } = await loadedStore();
 

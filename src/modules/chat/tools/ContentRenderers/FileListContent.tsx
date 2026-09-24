@@ -9,10 +9,12 @@ type FileListContentProps = {
   files: string[] | FileListItem[];
   onFileClick?: (filePath: string) => void;
   title?: string;
+  /** Render file names as inert transcript text instead of workspace links. */
+  interactive?: boolean;
 };
 
 /**
- * Renders a compact comma-separated list of clickable file names
+ * Renders a compact comma-separated list of file names, optionally clickable.
  * Used by: Grep/Glob results
  *
  * Rendered by chat's ToolRenderer as the content of a file-list tool result.
@@ -20,7 +22,8 @@ type FileListContentProps = {
 export const FileListContent: React.FC<FileListContentProps> = ({
   files,
   onFileClick,
-  title
+  title,
+  interactive = true,
 }) => {
   return (
     <div>
@@ -39,13 +42,22 @@ export const FileListContent: React.FC<FileListContentProps> = ({
 
           return (
             <span key={index} className="inline-flex items-center">
-              <button
-                onClick={handleClick}
-                className="font-mono text-[11px] text-blue-600 transition-colors hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
-                title={filePath}
-              >
-                {fileName}
-              </button>
+              {interactive ? (
+                <button
+                  onClick={handleClick}
+                  className="font-mono text-[11px] text-blue-600 transition-colors hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+                  title={filePath}
+                >
+                  {fileName}
+                </button>
+              ) : (
+                <span
+                  className="font-mono text-[11px] text-muted-foreground"
+                  title={filePath}
+                >
+                  {fileName}
+                </span>
+              )}
               {index < files.length - 1 && (
                 <span className="ml-1 text-[10px] text-gray-300 dark:text-gray-600">,</span>
               )}

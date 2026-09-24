@@ -12,6 +12,7 @@ describe('embedded host context', () => {
       stageTitle: '',
       stageDescription: '',
       stageExamples: [],
+      stage: '',
     });
   });
 
@@ -23,6 +24,7 @@ describe('embedded host context', () => {
         stageTitle: '  Literature & Evidence  ',
         stageDescription: '  Build a traceable evidence base.  ',
         stageExamples: ['  Compare Method A and Method B.  ', '', 42, 'Check every citation.'],
+        stage: 'rebuttal_baseline',
       });
     });
 
@@ -30,6 +32,7 @@ describe('embedded host context', () => {
       stageTitle: 'Literature & Evidence',
       stageDescription: 'Build a traceable evidence base.',
       stageExamples: ['Compare Method A and Method B.', 'Check every citation.'],
+      stage: 'rebuttal_baseline',
     });
   });
 

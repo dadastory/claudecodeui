@@ -854,6 +854,13 @@ export function useChatComposerState({
         return;
       }
 
+      if (editingAnchorId && IS_LLM4AD_EMBEDDED && window.parent !== window) {
+        window.parent.postMessage(
+          { type: 'llm4ad:conversation-rewound' },
+          window.location.origin,
+        );
+      }
+
       addMessage(userMessage);
       // Mark this request as processing in the per-session activity map (the
       // single source of truth the indicator derives from). The id is always
@@ -917,6 +924,31 @@ export function useChatComposerState({
   useEffect(() => {
     handleSubmitRef.current = handleSubmit;
   }, [handleSubmit]);
+
+  const submitSuggestedPrompt = useCallback(async (prompt: string): Promise<void> => {
+    if (!prompt.trim()) return;
+    // Submit from the current value immediately; React state may not have committed yet.
+    setInput(prompt);
+    inputValueRef.current = prompt;
+    await handleSubmitRef.current?.(createFakeSubmitEvent());
+  }, [setInput]);
+
+  useEffect(() => {
+    if (!IS_LLM4AD_EMBEDDED) return;
+    const handleParentPrompt = (event: MessageEvent) => {
+      if (
+        event.source !== window.parent ||
+        event.origin !== window.location.origin ||
+        event.data?.type !== 'llm4ad:submit-prompt' ||
+        typeof event.data.prompt !== 'string'
+      ) return;
+      // Preserve an unsent author draft instead of replacing it with an automatic handoff.
+      if (inputValueRef.current.trim()) return;
+      void submitSuggestedPrompt(event.data.prompt);
+    };
+    window.addEventListener('message', handleParentPrompt);
+    return () => window.removeEventListener('message', handleParentPrompt);
+  }, [submitSuggestedPrompt]);
 
   // The VPS dispatcher owns sending. While the card is visible, periodically
   // reconcile only its removal so the UI notices when the server claims it.
@@ -1263,6 +1295,7 @@ export function useChatComposerState({
     isDragActive,
     openAttachmentPicker: open,
     handleSubmit,
+    submitSuggestedPrompt,
     queuedDraft,
     editQueuedDraft,
     deleteQueuedDraft,

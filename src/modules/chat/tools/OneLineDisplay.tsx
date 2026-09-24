@@ -28,6 +28,8 @@ type OneLineDisplayProps = {
   toolResult?: any;
   toolId?: string;
   status?: ToolStatus;
+  /** Keep tool metadata visible without allowing workspace navigation. */
+  allowNavigation?: boolean;
 };
 
 /**
@@ -56,6 +58,7 @@ export const OneLineDisplay: React.FC<OneLineDisplayProps> = ({
   toolResult,
   toolId,
   status,
+  allowNavigation = true,
 }) => {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -129,13 +132,22 @@ export const OneLineDisplay: React.FC<OneLineDisplayProps> = ({
       <div className={`group flex items-center gap-1.5 border-l-2 ${colorScheme.border} my-0.5 py-0.5 pl-3`}>
         <span className="flex-shrink-0 text-xs text-muted-foreground">{label || toolName}</span>
         <span className="text-[10px] text-muted-foreground/40">/</span>
-        <button
-          onClick={handleAction}
-          className="truncate font-mono text-xs text-primary transition-colors hover:text-primary/80 hover:underline"
-          title={value}
-        >
-          {displayName}
-        </button>
+        {allowNavigation ? (
+          <button
+            onClick={handleAction}
+            className="truncate font-mono text-xs text-primary transition-colors hover:text-primary/80 hover:underline"
+            title={value}
+          >
+            {displayName}
+          </button>
+        ) : (
+          <span
+            className="truncate font-mono text-xs text-muted-foreground"
+            title={value}
+          >
+            {displayName}
+          </span>
+        )}
         {status && <ToolStatusBadge status={status} className="ml-auto" />}
       </div>
     );
@@ -156,7 +168,7 @@ export const OneLineDisplay: React.FC<OneLineDisplayProps> = ({
           </span>
         )}
         {status && <ToolStatusBadge status={status} />}
-        {toolResult && (
+        {toolResult && allowNavigation && (
           <a
             href={`#tool-result-${toolId}`}
             className="flex flex-shrink-0 items-center gap-0.5 text-[11px] text-primary transition-colors hover:text-primary/80"

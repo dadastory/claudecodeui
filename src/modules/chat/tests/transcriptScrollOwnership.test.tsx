@@ -190,6 +190,49 @@ afterEach(() => {
 });
 
 describe('deferred scroll-to-bottom', () => {
+  it('honors an upward gesture that starts immediately after an automatic scroll', async () => {
+    const messages = new Map<string, NormalizedMessage[]>([
+      [SESSION_A, [buildMessage(0, '2026-01-01T00:00:00.000Z')]],
+    ]);
+    const store = createStore(messages);
+    const { result, rerender } = await renderChatSessionState({
+      session: { id: SESSION_A } as ProjectSession,
+      store,
+    });
+
+    const container = createContainer(5000, 500);
+    await mountContainer(result, rerender, container, SESSION_A);
+
+    // The browser delivers the scroll event caused by an automatic jump on a
+    // later frame. A user can start scrolling upward inside that same window;
+    // their movement must take ownership instead of being mistaken for the
+    // automatic event that just finished.
+    act(() => {
+      result.current.scrollToBottom();
+      container.element.dispatchEvent(new Event('scroll'));
+      simulateUserScroll(container, 1000);
+    });
+
+    messages.set(SESSION_A, [
+      ...messages.get(SESSION_A)!,
+      buildMessage(1, '2026-01-01T00:00:01.000Z'),
+    ]);
+    act(() => {
+      rerender({ session: { id: SESSION_A } as ProjectSession });
+    });
+    container.writes.length = 0;
+
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+
+    assert.deepEqual(
+      container.writes,
+      [],
+      `a real upward gesture must override a recent automatic scroll; got ${JSON.stringify(container.writes)}`,
+    );
+  });
+
   it('does not yank the view back down when the user scrolls up inside the delay', async () => {
     const messages = new Map<string, NormalizedMessage[]>([
       [SESSION_A, [buildMessage(0, '2026-01-01T00:00:00.000Z')]],

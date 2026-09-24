@@ -180,3 +180,22 @@ test('a disconnected websocket leaves the submitted draft available to retry', a
   assert.equal(view.result.current.input, 'retry after reconnect');
   assert.equal(readDraftText('session-a'), 'retry after reconnect');
 });
+
+test('a guided prompt sends immediately through the normal conversation path', async () => {
+  const sent: unknown[] = [];
+  const view = renderComposer({ id: 'session-a' }, (message) => {
+    sent.push(message);
+    return true;
+  });
+
+  await act(async () => {
+    await view.result.current.submitSuggestedPrompt('Fetch OpenReview forum paper123');
+  });
+
+  assert.equal((sent[0] as { type: string }).type, 'chat.send');
+  assert.equal(
+    (sent[0] as { content: string }).content,
+    'Fetch OpenReview forum paper123',
+  );
+  assert.equal(view.result.current.input, '');
+});

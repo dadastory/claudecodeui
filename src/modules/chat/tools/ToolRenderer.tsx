@@ -16,6 +16,7 @@ import { PlanDisplay } from '@/modules/chat/tools/PlanDisplay';
 import { ToolStatusBadge } from '@/modules/chat/tools/ToolStatusBadge';
 import { DiffStatsBadge } from '@/modules/chat/tools/DiffStatsBadge';
 import { parseToolPayload, summarizeDiff } from '@/modules/chat/utils/messageTransforms';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type ToolRendererProps = {
   toolName: string;
@@ -106,7 +107,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
   );
 
   const handleAction = useCallback(() => {
-    if (displayConfig?.action === 'open-file' && onFileOpen) {
+    if (!IS_LLM4AD_EMBEDDED && displayConfig?.action === 'open-file' && onFileOpen) {
       const value = displayConfig.getValue?.(parsedData) || '';
       onFileOpen(value);
     }
@@ -167,6 +168,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
         colorScheme={displayConfig.colorScheme}
         resultId={mode === 'input' ? `tool-result-${toolId}` : undefined}
         status={toolStatus !== 'completed' ? toolStatus : undefined}
+        allowNavigation={!IS_LLM4AD_EMBEDDED}
       />
     );
   }
@@ -179,7 +181,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
     const contentProps = displayConfig.getContentProps?.(parsedData, {
       selectedProject,
       createDiff,
-      onFileOpen
+      onFileOpen: IS_LLM4AD_EMBEDDED ? undefined : onFileOpen
     }) || {};
 
     const isStreaming = mode === 'input' && !toolResult;
@@ -210,7 +212,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
     const contentProps = displayConfig.getContentProps?.(parsedData, {
       selectedProject,
       createDiff,
-      onFileOpen
+      onFileOpen: IS_LLM4AD_EMBEDDED ? undefined : onFileOpen
     }) || {};
 
     let contentComponent: React.ReactNode = null;
@@ -222,7 +224,11 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
             <ToolDiffViewer
               {...contentProps}
               createDiff={createDiff}
-              onFileClick={() => onFileOpen?.(contentProps.filePath)}
+              onFileClick={
+                !IS_LLM4AD_EMBEDDED && onFileOpen
+                  ? () => onFileOpen(contentProps.filePath)
+                  : undefined
+              }
             />
           );
         }
@@ -238,6 +244,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
             files={contentProps.files || []}
             onFileClick={onFileOpen}
             title={contentProps.title}
+            interactive={!IS_LLM4AD_EMBEDDED}
           />
         );
         break;
@@ -289,7 +296,10 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
       }
     }
 
-    const handleTitleClick = (toolName === 'Edit' || toolName === 'Write' || toolName === 'ApplyPatch') && contentProps.filePath && onFileOpen
+    const handleTitleClick = !IS_LLM4AD_EMBEDDED
+      && (toolName === 'Edit' || toolName === 'Write' || toolName === 'ApplyPatch')
+      && contentProps.filePath
+      && onFileOpen
       ? () => onFileOpen(contentProps.filePath, {
           old_string: contentProps.oldContent,
           new_string: contentProps.newContent

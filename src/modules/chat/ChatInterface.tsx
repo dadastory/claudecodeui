@@ -211,6 +211,7 @@ function ChatInterface({
     isDragActive,
     openAttachmentPicker,
     handleSubmit,
+    submitSuggestedPrompt,
     queuedDraft,
     editQueuedDraft,
     deleteQueuedDraft,
@@ -447,6 +448,7 @@ function ChatInterface({
           isTaskMasterInstalled={isTaskMasterInstalled}
           onShowAllTasks={onShowAllTasks}
           setInput={setInput}
+          onSubmitSuggestedPrompt={submitSuggestedPrompt}
           isLoadingMoreMessages={isLoadingMoreMessages}
           hasMoreMessages={hasMoreMessages}
           totalMessages={totalMessages}
@@ -470,7 +472,11 @@ function ChatInterface({
           // offered when the session is idle — a half-truncated transcript with
           // a live stream writing into it is not recoverable.
           onEditMessage={supportsMessageEditing && !isProcessing ? beginEditMessage : undefined}
-          onForkFromMessage={supportsSessionForking ? handleForkFromMessage : undefined}
+          onForkFromMessage={
+            !IS_LLM4AD_EMBEDDED && supportsSessionForking
+              ? handleForkFromMessage
+              : undefined
+          }
           onLoadFullTranscript={loadFullTranscript}
         />
 

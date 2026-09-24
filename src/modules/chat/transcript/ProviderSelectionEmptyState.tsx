@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { ArrowUpRight, ChevronDown, Lightbulb, Plus } from "lucide-react";
+import { ArrowUpRight, BookOpenText, ChevronDown, Plus } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
 
 import type {
@@ -65,7 +65,55 @@ type ProviderSelectionEmptyStateProps = {
   isTaskMasterInstalled: boolean | null;
   onShowAllTasks?: (() => void) | null;
   setInput: React.Dispatch<React.SetStateAction<string>>;
+  onSubmitSuggestedPrompt: (prompt: string) => Promise<void>;
 };
+
+function ReviewPasteStarter({
+  onSubmitSuggestedPrompt,
+}: {
+  onSubmitSuggestedPrompt: (prompt: string) => Promise<void>;
+}) {
+  const { t } = useTranslation('chat');
+  const [reviewText, setReviewText] = useState('');
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const reports = reviewText.trim();
+    if (!reports) return;
+    void onSubmitSuggestedPrompt(`${t('session.continue.reviewPastePrompt')}\n\n${reports}`);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-7 border border-primary/25 bg-primary/[0.025] p-4 sm:p-5">
+      <div className="flex items-start gap-3">
+        <span className="mt-1 block h-7 w-1 shrink-0 bg-primary/70" aria-hidden="true" />
+        <div className="min-w-0">
+          <h3 className="font-serif text-lg font-semibold text-foreground">
+            {t('session.continue.reviewPasteTitle')}
+          </h3>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            {t('session.continue.reviewPasteDescription')}
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-col gap-3">
+        <textarea
+          required
+          value={reviewText}
+          onChange={(event) => setReviewText(event.target.value)}
+          aria-label={t('session.continue.reviewPasteLabel')}
+          placeholder={t('session.continue.reviewPastePlaceholder')}
+          rows={7}
+          className="max-h-72 min-h-40 w-full resize-y overflow-y-auto rounded-md border border-border bg-background px-3 py-2.5 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
+        />
+        <Button type="submit" disabled={!reviewText.trim()} className="min-h-10 self-end gap-2">
+          {t('session.continue.reviewPasteStart')}
+          <ArrowUpRight aria-hidden="true" className="size-4" />
+        </Button>
+      </div>
+    </form>
+  );
+}
 
 function getModelConfig(
   p: LLMProvider,
@@ -102,6 +150,7 @@ export default function ProviderSelectionEmptyState({
   isTaskMasterInstalled,
   onShowAllTasks,
   setInput,
+  onSubmitSuggestedPrompt,
 }: ProviderSelectionEmptyStateProps) {
   const { t } = useTranslation("chat");
   const embeddedHost = useEmbeddedHostContext();
@@ -356,60 +405,64 @@ export default function ProviderSelectionEmptyState({
     );
   }
 
-  if (selectedSession) {
+  if (selectedSession && IS_LLM4AD_EMBEDDED) {
     return (
-      <div className="flex h-full items-center justify-center overflow-y-auto px-4 py-6">
-        <div className="w-full max-w-[38rem] px-2 text-center sm:px-6">
-          <p className="mb-1.5 text-lg font-semibold text-foreground">
-            {IS_LLM4AD_EMBEDDED
-              ? t("session.continue.embeddedTitle", {
-                  stage:
-                    embeddedHost.stageTitle ||
-                    t("input.embeddedStageFallback"),
-                })
-              : t("session.continue.title")}
-          </p>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {IS_LLM4AD_EMBEDDED
-              ? embeddedHost.stageDescription ||
-                t("session.continue.embeddedDescription")
-              : t("session.continue.description")}
-          </p>
+      <div className="flex h-full overflow-y-auto px-4 py-6">
+        <div className="my-auto w-full max-w-none">
+          <div className="border-l-2 border-primary/60 pl-5">
+            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-primary">
+              <BookOpenText aria-hidden="true" className="h-4 w-4" />
+              <span>{embeddedHost.stageTitle || t("input.embeddedStageFallback")}</span>
+            </div>
+            <h2 className="font-serif text-2xl font-semibold leading-tight tracking-tight text-foreground sm:text-3xl">
+              {t("session.continue.embeddedTitle", {
+                stage:
+                  embeddedHost.stageTitle ||
+                  t("input.embeddedStageFallback"),
+              })}
+            </h2>
+            <p className="mt-3 max-w-2xl text-[15px] leading-7 text-muted-foreground">
+              {embeddedHost.stageDescription ||
+                t("session.continue.embeddedDescription")}
+            </p>
+          </div>
+
+          {embeddedHost.stage === 'rebuttal_baseline' && (
+            <ReviewPasteStarter onSubmitSuggestedPrompt={onSubmitSuggestedPrompt} />
+          )}
 
           {stageExamples.length > 0 && (
-            <div className="mt-5 rounded-2xl border border-border/70 bg-card/70 p-3 text-left shadow-sm sm:p-4">
-              <div className="mb-3 flex items-start gap-2.5">
-                <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                  <Lightbulb className="h-3.5 w-3.5" />
-                </span>
-                <div>
-                  <p className="text-xs font-semibold text-foreground">
-                    {t("session.continue.guideTitle")}
-                  </p>
-                  <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-                    {t("session.continue.guideDescription")}
-                  </p>
-                </div>
+            <section className="mt-8 border-y border-border/80 text-left">
+              <div className="py-4">
+                <h3 className="font-serif text-lg font-semibold text-foreground">
+                  {t("session.continue.guideTitle")}
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  {t("session.continue.guideDescription")}
+                </p>
               </div>
-              <div className="grid gap-2">
+              <div className="divide-y divide-border/70 border-t border-border/70">
                 {stageExamples.map((example, index) => (
                   <button
                     key={example}
                     type="button"
-                    className="group flex w-full items-start gap-3 rounded-xl border border-border/60 bg-background/80 px-3 py-2.5 text-left transition-colors hover:border-primary/35 hover:bg-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="group flex w-full items-start gap-4 px-1 py-4 text-left transition-colors hover:bg-primary/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-3"
                     onClick={() => applyStageExample(example)}
                   >
-                    <span className="mt-0.5 font-mono text-[10px] font-semibold text-muted-foreground/70">
+                    <span className="w-8 shrink-0 font-serif text-xl tabular-nums leading-6 text-muted-foreground/65">
                       {String(index + 1).padStart(2, "0")}
                     </span>
-                    <span className="min-w-0 flex-1 text-xs leading-5 text-foreground/90">
+                    <span className="min-w-0 flex-1 text-sm leading-6 text-foreground/90">
                       {example}
                     </span>
-                    <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" />
+                    <ArrowUpRight
+                      aria-hidden="true"
+                      className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary motion-reduce:transition-none"
+                    />
                   </button>
                 ))}
               </div>
-            </div>
+            </section>
           )}
 
           {tasksEnabled && isTaskMasterInstalled && (
@@ -420,6 +473,21 @@ export default function ProviderSelectionEmptyState({
               />
             </div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  if (selectedSession) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 py-6 text-center">
+        <div className="w-full max-w-[38rem]">
+          <p className="text-lg font-semibold text-foreground">
+            {t("session.continue.title")}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {t("session.continue.description")}
+          </p>
         </div>
       </div>
     );

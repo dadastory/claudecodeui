@@ -57,16 +57,6 @@ const USER_SCROLL_GRACE_MS = 700;
 const AUTO_FOLLOW_REENGAGE_PX = 150;
 
 /**
- * How long after a programmatic scroll its `scroll` event may still arrive.
- *
- * Browsers dispatch `scroll` on the frame after the assignment, so the window
- * only has to span a frame or two; it is generous because a slow frame while
- * markdown renders can delay it further, and misreading our own scroll as a
- * gesture would disable follow exactly when streaming is trying to use it.
- */
-const PROGRAMMATIC_SCROLL_WINDOW_MS = 150;
-
-/**
  * Finds the rendered row for a resolved search target.
  *
  * Only an exact timestamp match counts while retries remain: the widened window
@@ -282,17 +272,6 @@ export function useChatSessionState({
    * scroll-up is never undone by a follower that started before the gesture.
    */
   const lastUserScrollUpAtRef = useRef(0);
-  /**
-   * Deadline until which a `scroll` event is known to be ours.
-   *
-   * Autoscroll aims the container at its bottom, which emits the same `scroll`
-   * event a gesture does, and only the resulting downward movement is
-   * indistinguishable. A depth counter cannot mark it: scroll events are
-   * dispatched asynchronously (on the frame after the assignment), so anything
-   * cleared synchronously around `scrollTop = …` is already gone by the time
-   * the handler runs. A timestamp survives that gap.
-   */
-  const programmaticScrollUntilRef = useRef(0);
   const isLoadingMoreRef = useRef(false);
   const allMessagesLoadedRef = useRef(false);
   const topLoadLockRef = useRef(false);
@@ -510,9 +489,6 @@ export function useChatSessionState({
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    // Marks the `scroll` event this emits as ours, so the handler does not read
-    // it as a gesture (see `programmaticScrollUntilRef`).
-    programmaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_WINDOW_MS;
     container.scrollTop = container.scrollHeight;
   }, []);
 
@@ -634,17 +610,15 @@ export function useChatSessionState({
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    // A follow that moved the viewport down emits the same event a gesture
-    // does, and reading it as intent would make every follow look like the user
-    // had scrolled — which is what disabled follow for the next gesture.
-    const isProgrammaticScroll = Date.now() < programmaticScrollUntilRef.current;
     const previousTop = scrollPositionRef.current.top;
     const movedTowardOlder = container.scrollTop < previousTop;
 
-    if (!isProgrammaticScroll && movedTowardOlder) {
+    if (movedTowardOlder) {
       // A gesture toward older content is the user asking us to stop following.
       // Recorded on the ref as well as the timestamp: the next event, and every
       // follower armed in between, must see the decision this one made.
+      // Automatic following only moves downward, so an upward movement always
+      // belongs to the reader, even if it starts immediately after a follow.
       lastUserScrollUpAtRef.current = Date.now();
       applyUserScrolledUp(true);
     } else if (isUserScrolledUpRef.current && isNearBottom(AUTO_FOLLOW_REENGAGE_PX)) {

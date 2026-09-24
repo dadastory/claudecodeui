@@ -15,6 +15,7 @@ import MessageCopyControl from '@/modules/chat/transcript/MessageCopyControl';
 import MessageSpeakControl from '@/modules/chat/transcript/MessageSpeakControl';
 import { useIsExportingTranscript } from '@/modules/chat/context/TranscriptRenderContext';
 import { MemoryCitations } from '@/modules/chat/transcript/MemoryCitations';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type MessageComponentProps = {
   message: ChatMessage;
@@ -98,7 +99,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
     >
       {message.type === 'user' ? (
         /* User turn on the right: claude.ai-style attachment cards above the bubble */
-        <div className="flex w-full items-end space-x-0 sm:w-auto sm:max-w-[85%] sm:space-x-3 md:max-w-md lg:max-w-lg xl:max-w-xl">
+        <div className={`flex w-full items-end space-x-0 sm:w-auto sm:space-x-3 ${IS_LLM4AD_EMBEDDED ? 'sm:max-w-[88%] md:max-w-2xl' : 'sm:max-w-[85%] md:max-w-md lg:max-w-lg xl:max-w-xl'}`}>
           <div className="flex min-w-0 flex-1 flex-col items-end gap-2 sm:flex-initial">
             {message.images && message.images.length > 0 && (
               <ChatMessageImages
@@ -110,11 +111,11 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
               <ChatMessageFiles files={message.files} />
             )}
             {userCopyContent.trim().length > 0 || (!message.images?.length && !message.files?.length) ? (
-              <div className="group max-w-full rounded-2xl rounded-br-md border border-border/60 bg-muted/60 px-3 py-2 text-foreground shadow-sm dark:bg-gray-800/60 sm:px-4">
-                <div dir="auto" className="break-words font-serif text-sm">
+              <div className={`group max-w-full border px-4 py-3 text-foreground shadow-sm ${IS_LLM4AD_EMBEDDED ? 'rounded-xl rounded-br-sm border-primary/15 bg-primary/[0.045]' : 'rounded-2xl rounded-br-md border-border/60 bg-muted/60 dark:bg-gray-800/60'}`}>
+                <div dir="auto" className={`break-words font-serif ${IS_LLM4AD_EMBEDDED ? 'text-[15px] leading-7' : 'text-sm'}`}>
                   <Markdown
                     breaks
-                    className="prose prose-sm max-w-none font-serif dark:prose-invert"
+                    className={`prose max-w-none font-serif dark:prose-invert ${IS_LLM4AD_EMBEDDED ? 'prose-base [&_li]:leading-7 [&_p]:leading-7' : 'prose-sm'}`}
                   >
                     {message.content}
                   </Markdown>
@@ -155,7 +156,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
               </div>
             )}
           </div>
-          {!isGrouped && (
+          {!IS_LLM4AD_EMBEDDED && !isGrouped && (
             <div className="hidden h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm text-white sm:flex">
               U
             </div>
@@ -163,7 +164,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
         </div>
       ) : message.isTaskNotification ? (
         /* Compact task notification on the left */
-        <div className="w-full">
+        <div className={`w-full ${IS_LLM4AD_EMBEDDED && message.type === 'assistant' && !message.isToolUse ? 'border-l border-border/80 pl-4' : ''}`}>
           <div className="flex items-center gap-2 py-0.5">
             <span className={`inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${message.taskStatus === 'completed' ? 'bg-green-400 dark:bg-green-500' : 'bg-amber-400 dark:bg-amber-500'}`} />
             <span className="text-xs text-gray-500 dark:text-gray-400">{message.content}</span>
@@ -286,7 +287,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
                 </ReasoningContent>
               </Reasoning>
             ) : (
-              <div dir="auto" className="text-sm text-gray-700 dark:text-gray-300">
+              <div dir="auto" className={`${IS_LLM4AD_EMBEDDED ? 'text-[15px] leading-7 text-foreground/90' : 'text-sm text-gray-700 dark:text-gray-300'}`}>
                 {/* Reasoning accordion */}
                 {showThinking && message.reasoning && (
                   <Reasoning className="mb-3" defaultOpen={false}>
@@ -339,7 +340,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
                     <StreamingMarkdown
                       content={content}
                       isStreaming={Boolean(message.isStreaming)}
-                      className="prose prose-sm prose-gray max-w-none font-serif dark:prose-invert"
+                      className={`prose prose-gray max-w-none font-serif dark:prose-invert ${IS_LLM4AD_EMBEDDED ? 'prose-base [&_li]:leading-7 [&_p]:leading-7' : 'prose-sm'}`}
                     />
                   ) : (
                     <div className="whitespace-pre-wrap">
@@ -375,4 +376,3 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
 });
 
 export default MessageComponent;
-

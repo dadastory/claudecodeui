@@ -17,6 +17,7 @@ import ProviderSelectionEmptyState from '@/modules/chat/transcript/ProviderSelec
 import ToolGroupContainer from '@/modules/chat/transcript/ToolGroupContainer';
 import LoadAllMessagesOverlay from '@/modules/chat/transcript/LoadAllMessagesOverlay';
 import ChatExportMenu from '@/modules/chat/transcript/ChatExportMenu';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 /**
  * How many of the newest rows mount with real content on the first commit,
@@ -49,6 +50,7 @@ type ChatMessagesPaneProps = {
   isTaskMasterInstalled: boolean | null;
   onShowAllTasks?: (() => void) | null;
   setInput: Dispatch<SetStateAction<string>>;
+  onSubmitSuggestedPrompt: (prompt: string) => Promise<void>;
   isLoadingMoreMessages: boolean;
   hasMoreMessages: boolean;
   totalMessages: number;
@@ -103,6 +105,7 @@ function ChatMessagesPane({
   isTaskMasterInstalled,
   onShowAllTasks,
   setInput,
+  onSubmitSuggestedPrompt,
   isLoadingMoreMessages,
   hasMoreMessages,
   totalMessages,
@@ -188,11 +191,15 @@ function ChatMessagesPane({
           </div>
         </div>
       )}
-      <div className="mx-auto w-full max-w-[54.25rem] space-y-3 px-4 sm:space-y-4">
+      <div
+        className={`mx-auto w-full space-y-4 px-3 sm:px-4 ${
+          IS_LLM4AD_EMBEDDED ? 'max-w-none sm:space-y-5' : 'max-w-[54.25rem]'
+        }`}
+      >
       {(isLoadingSessionMessages || isProcessing) && chatMessages.length === 0 ? (
-        <div className="mt-8 text-center text-gray-500 dark:text-gray-400">
+        <div className="mt-8 text-center text-sm text-muted-foreground">
           <div className="flex items-center justify-center space-x-2">
-            <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-gray-400" />
+            <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-current motion-reduce:animate-none" />
             <p>{t('session.loading.sessionMessages')}</p>
           </div>
         </div>
@@ -212,6 +219,7 @@ function ChatMessagesPane({
           isTaskMasterInstalled={isTaskMasterInstalled}
           onShowAllTasks={onShowAllTasks}
           setInput={setInput}
+          onSubmitSuggestedPrompt={onSubmitSuggestedPrompt}
         />
       ) : (
         <>
