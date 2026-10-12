@@ -185,25 +185,43 @@ test('hidden reasoning between two tool calls does not split the run', () => {
   assert.equal(isToolGroupItem(items[0]), true);
 });
 
-test('reasoning the user can see does split the run', () => {
+test('visible reasoning between matching tools stays inside the expandable group', () => {
+  const first = toolMessage('Read', { file_path: '/a.ts' });
+  const reasoning = thinkingMessage();
+  const second = toolMessage('Read', { file_path: '/b.ts' });
   const items = groupConsecutiveTools([
-    toolMessage('Read', { file_path: '/a.ts' }),
-    thinkingMessage(),
-    toolMessage('Read', { file_path: '/b.ts' }),
+    first,
+    reasoning,
+    second,
   ], true);
 
-  assert.equal(items.length, 3);
-  assert.equal(items.filter(isToolGroupItem).length, 0);
+  assert.equal(items.length, 1);
+  assert.ok(isToolGroupItem(items[0]));
+  assert.deepEqual(items[0].messages, [first, reasoning, second]);
+  assert.equal(items[0].preview, '/a.ts, /b.ts');
 });
 
-test('showThinking defaults to on, so a caller that omits it does not collapse a visible turn', () => {
-  const withThinkingShown = groupConsecutiveTools([
+test('showThinking defaults to on and keeps interleaved reasoning in the group', () => {
+  const items = groupConsecutiveTools([
     toolMessage('Read', { file_path: '/a.ts' }),
     thinkingMessage(),
     toolMessage('Read', { file_path: '/b.ts' }),
   ]);
 
-  assert.equal(withThinkingShown.length, 3);
+  assert.equal(items.length, 1);
+  assert.ok(isToolGroupItem(items[0]));
+  assert.equal(items[0].messages.length, 3);
+});
+
+test('visible reasoning is not absorbed without a later matching tool', () => {
+  const items = groupConsecutiveTools([
+    toolMessage('Read', { file_path: '/a.ts' }),
+    thinkingMessage(),
+    toolMessage('Write', { file_path: '/b.ts' }),
+  ], true);
+
+  assert.equal(items.length, 3);
+  assert.equal(items.filter(isToolGroupItem).length, 0);
 });
 
 test('a subagent container is never absorbed into a group', () => {

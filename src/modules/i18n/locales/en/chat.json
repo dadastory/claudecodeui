@@ -33,7 +33,21 @@
     "readFile": "Read file",
     "updateTodo": "Update todo list",
     "readTodo": "Read todo list",
-    "searchResults": "results"
+    "searchResults": "results",
+    "skill": {
+      "active": "Consulting skill",
+      "complete": "Skill consulted",
+      "failed": "Skill access failed",
+      "unknown": "Skill guidance",
+      "source": "Source / call details",
+      "group": "Consulting skills"
+    },
+    "status": {
+      "running": "Running",
+      "completed": "Completed",
+      "error": "Error",
+      "denied": "Denied"
+    }
   },
   "search": {
     "found": "Found {{count}} {{type}}",
@@ -61,7 +75,10 @@
   },
   "thinking": {
     "title": "Thinking...",
-    "emoji": "💭 Thinking..."
+    "emoji": "💭 Thinking...",
+    "active": "Working…",
+    "details": "Process details",
+    "duration": "{{count}}s"
   },
   "json": {
     "response": "JSON Response"
@@ -240,6 +257,7 @@
     "defaultCommand": "command"
   },
   "claudeStatus": {
+    "embeddedWorking": "Working",
     "actions": {
       "thinking": "Thinking",
       "processing": "Processing",

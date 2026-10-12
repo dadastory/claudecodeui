@@ -1,11 +1,13 @@
 import { memo, useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import type { ChatMessage, ClaudePermissionSuggestion, PermissionGrantResult, LLMProvider,DiffLine,DiffStats,Project,ToolGroupItem } from '@/shared/types';
 import { getToolConfig } from '@/modules/chat/tools';
 import MessageComponent from '@/modules/chat/transcript/MessageComponent';
 import { useIsExportingTranscript } from '@/modules/chat/context/TranscriptRenderContext';
 import { DiffStatsBadge } from '@/modules/chat/tools/DiffStatsBadge';
+import { ToolStatusBadge } from '@/modules/chat/tools/ToolStatusBadge';
 import { parseToolPayload, summarizeDiff } from '@/modules/chat/utils/messageTransforms';
 
 type ToolGroupContainerProps = {
@@ -86,6 +88,7 @@ function ToolGroupContainer({
   selectedProject,
   provider,
 }: ToolGroupContainerProps) {
+  const { t } = useTranslation('chat');
   const isExporting = useIsExportingTranscript();
   // Collapsed on screen, always open in an export: the whole point of the
   // group row is to hide detail the reader can ask for, and an exported file
@@ -93,13 +96,36 @@ function ToolGroupContainer({
   const [isExpanded, setIsExpanded] = useState(false);
   const showChildren = isExpanded || isExporting;
   const config = getToolConfig(group.toolName).input;
-  const label = config.label || group.toolName;
+  const toolMessages = group.messages.filter((message) => message.isToolUse && message.toolName === group.toolName);
+  const hasDenied = toolMessages.some((message) => message.toolStatus === 'denied');
+  const hasFailure = toolMessages.some((message) => message.toolStatus !== 'denied' && (message.toolStatus === 'failed' || message.toolResult?.isError));
+  const hasRunning = toolMessages.some((message) => !message.toolResult?.isError && message.toolStatus !== 'denied' && message.toolStatus !== 'failed' && (
+    message.toolStatus === 'in_progress' || (!message.toolResult && message.toolStatus !== 'completed')
+  ));
+  const isSkillGroup = group.toolName === 'Skill' || (group.toolName === 'Read' && toolMessages.every((message) => {
+    const input = parseToolPayload(message.toolInput);
+    const path = input && typeof input === 'object' ? (input as Record<string, unknown>).file_path : null;
+    return typeof path === 'string' && /(?:^|[/\\])SKILL\.md$/i.test(path);
+  }));
+  const label = isSkillGroup
+    ? t('tools.skill.group')
+    : group.toolName === 'Read' ? t('tools.read') : config.label || group.toolName;
   const borderClass = config.colorScheme?.border || 'border-border';
   const iconClass = config.colorScheme?.icon || 'text-muted-foreground';
   const icon = getToolGroupIcon(config.icon, group.toolName);
 
-  const preview = group.preview;
-  const groupDiffStats = useGroupDiffStats(group.toolName, group.messages, createDiff);
+  const preview = isSkillGroup
+    ? toolMessages.slice(0, 2).map((message) => {
+      const input = parseToolPayload(message.toolInput);
+      if (!input || typeof input !== 'object') return null;
+      const data = input as Record<string, unknown>;
+      if (group.toolName === 'Read' && typeof data.file_path === 'string') {
+        return data.file_path.split(/[/\\]/).at(-2);
+      }
+      return [data.skill, data.skill_name, data.name].find((value) => typeof value === 'string');
+    }).filter(Boolean).join(', ')
+    : group.preview;
+  const groupDiffStats = useGroupDiffStats(group.toolName, toolMessages, createDiff);
 
   return (
     <div className="chat-message tool px-3 sm:px-0" data-message-timestamp={group.timestamp || undefined}>
@@ -118,7 +144,7 @@ function ToolGroupContainer({
         </span>
         <span className="min-w-0 flex-shrink-0 text-xs font-medium text-foreground">{label}</span>
         <span className="flex-shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-          x{group.messages.length}
+          x{toolMessages.length}
         </span>
         {preview && (
           <>
@@ -126,7 +152,19 @@ function ToolGroupContainer({
             <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{preview}</span>
           </>
         )}
-        {groupDiffStats && <DiffStatsBadge stats={groupDiffStats} className="ml-auto pl-2" />}
+        {(hasDenied || hasFailure || hasRunning) && (
+          <span className="ml-auto flex flex-shrink-0 items-center gap-1">
+            {hasDenied && <ToolStatusBadge status="denied" />}
+            {hasFailure && <ToolStatusBadge status="error" />}
+            {hasRunning && <ToolStatusBadge status="running" />}
+          </span>
+        )}
+        {groupDiffStats && (
+          <DiffStatsBadge
+            stats={groupDiffStats}
+            className={hasDenied || hasFailure || hasRunning ? 'pl-2' : 'ml-auto pl-2'}
+          />
+        )}
       </button>
 
       {showChildren && (

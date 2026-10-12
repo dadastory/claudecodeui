@@ -33,7 +33,21 @@
     "readFile": "读取文件",
     "updateTodo": "更新待办列表",
     "readTodo": "读取待办列表",
-    "searchResults": "结果"
+    "searchResults": "结果",
+    "skill": {
+      "active": "正在参考技能",
+      "complete": "已参考技能",
+      "failed": "技能读取失败",
+      "unknown": "技能说明",
+      "source": "来源与调用详情",
+      "group": "参考技能"
+    },
+    "status": {
+      "running": "运行中",
+      "completed": "已完成",
+      "error": "出错",
+      "denied": "已拒绝"
+    }
   },
   "search": {
     "found": "找到 {{count}} 个{{type}}",
@@ -54,7 +68,10 @@
   },
   "thinking": {
     "title": "思考中...",
-    "emoji": "💭 思考中..."
+    "emoji": "💭 思考中...",
+    "active": "正在处理…",
+    "details": "处理过程",
+    "duration": "{{count}} 秒"
   },
   "json": {
     "response": "JSON 响应"
@@ -212,13 +229,14 @@
     "defaultCommand": "命令"
   },
   "claudeStatus": {
+    "embeddedWorking": "正在处理",
     "actions": {
-      "thinking": "Thinking",
-      "processing": "Processing",
-      "analyzing": "Analyzing",
-      "working": "Working",
-      "computing": "Computing",
-      "reasoning": "Reasoning"
+      "thinking": "思考中",
+      "processing": "处理中",
+      "analyzing": "分析中",
+      "working": "工作中",
+      "computing": "计算中",
+      "reasoning": "推理中"
     },
     "state": {
       "live": "Live",

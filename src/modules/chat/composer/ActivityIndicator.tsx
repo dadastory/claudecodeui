@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Shimmer } from '@/shared/ui';
 import type { SessionActivity } from '@/shared/types';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type ActivityIndicatorProps = {
   activity: SessionActivity | null;
@@ -67,8 +68,14 @@ export default function ActivityIndicator({ activity, onAbort, isInputFocused = 
   if (!renderedActivity) return null;
 
   const actionWords = ACTION_KEYS.map((key, i) => t(key, { defaultValue: DEFAULT_ACTION_WORDS[i] }));
-  const label = (renderedActivity.statusText || actionWords[Math.floor(elapsedSeconds / 4) % actionWords.length])
-    .replace(/\.+$/, '');
+  // Embedded assistants receive provider prose here; present a stable localised
+  // status while keeping skill work explicit rather than exposing raw runtime text.
+  const label = IS_LLM4AD_EMBEDDED
+    ? /\bskills?\b|SKILL\.md/i.test(renderedActivity.statusText || '')
+      ? t('tools.skill.active')
+      : t('claudeStatus.embeddedWorking')
+    : (renderedActivity.statusText || actionWords[Math.floor(elapsedSeconds / 4) % actionWords.length])
+      .replace(/\.+$/, '');
 
   const minutes = Math.floor(elapsedSeconds / 60);
   const seconds = elapsedSeconds % 60;

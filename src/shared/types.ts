@@ -637,7 +637,7 @@ export type QueuedSendOptions = Record<string, unknown>;
 /** Function that turns an old/new string pair into rendered diff lines; the chat session state supplies one memoized, caching instance so each file diff is computed only once. */
 export type DiffCalculator = (oldStr: string, newStr: string) => DiffLine[];
 
-/** A synthetic transcript entry standing for a run of consecutive calls to the same tool, produced by the message grouping pass and identified by its `_isGroup` flag so the message list can collapse the run into one expandable block. */
+/** A synthetic transcript entry for repeated calls to one tool, including any visible reasoning between those calls in their original order. */
 export type ToolGroupItem = {
   _isGroup: true;
   toolName: string;

@@ -131,4 +131,51 @@ describe('diff stats on a collapsed tool group', () => {
 
     expect(renderGroup('Read', [readMessage, readMessage])).not.toContain('lines added');
   });
+
+  it('counts calls rather than interleaved reasoning in a collapsed group', () => {
+    const markup = renderGroup('Edit', [
+      editMessage('one', 'one\ntwo'),
+      {
+        type: 'assistant',
+        content: 'Checking the next file.',
+        timestamp: new Date('2026-08-23T00:00:01.000Z'),
+        isThinking: true,
+      },
+      editMessage('alpha', 'alpha\nbeta'),
+    ]);
+
+    expect(markup).toContain('>x2</span>');
+    expect(markup).toContain('2 lines added, 0 removed');
+  });
+
+  it('surfaces a failed call while the group is collapsed', () => {
+    const failed = {
+      ...editMessage('one', 'two'),
+      toolResult: { content: 'Write failed', isError: true },
+    };
+    const completed = {
+      ...editMessage('alpha', 'beta'),
+      toolResult: { content: 'Done', isError: false },
+    };
+
+    const markup = renderGroup('Edit', [failed, completed]);
+
+    expect(markup).toContain('Error');
+  });
+
+  it('does not report a denied call as running', () => {
+    const denied = {
+      ...editMessage('one', 'two'),
+      toolStatus: 'denied',
+    };
+    const completed = {
+      ...editMessage('alpha', 'beta'),
+      toolResult: { content: 'Done', isError: false },
+    };
+
+    const markup = renderGroup('Edit', [denied, completed]);
+
+    expect(markup).toContain('Denied');
+    expect(markup).not.toContain('Running');
+  });
 });

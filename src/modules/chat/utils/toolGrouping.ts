@@ -17,13 +17,6 @@ function isGroupableToolMessage(message: ChatMessage): message is ChatMessage & 
   return Boolean(message.isToolUse && message.toolName && !message.isSubagentContainer);
 }
 
-// Messages that render nothing (e.g. reasoning hidden when showThinking is off)
-// shouldn't split an otherwise-continuous run of the same tool — providers like
-// Codex interleave hidden reasoning between consecutive tool calls.
-function rendersNothing(message: ChatMessage, showThinking: boolean): boolean {
-  return Boolean(message.isThinking && !showThinking);
-}
-
 function parseToolInput(toolInput: unknown): unknown {
   if (typeof toolInput !== 'string') {
     return toolInput;
@@ -95,19 +88,41 @@ export function groupConsecutiveTools(
     }
 
     const run: ChatMessage[] = [message];
+    const toolMessages: ChatMessage[] = [message];
     let nextIndex = index + 1;
 
     while (nextIndex < messages.length) {
       const candidate = messages[nextIndex];
 
-      // Skip invisible interleaved messages so they don't break the run.
-      if (rendersNothing(candidate, showThinking)) {
-        nextIndex += 1;
-        continue;
+      // Providers can interleave reasoning between two calls to the same tool.
+      // Keep visible reasoning in the expandable group, in its original order.
+      // Hidden reasoning consumes no row, so it can be skipped either way.
+      if (candidate.isThinking) {
+        let afterThinking = nextIndex + 1;
+        while (afterThinking < messages.length && messages[afterThinking].isThinking) {
+          afterThinking += 1;
+        }
+        const nextTool = messages[afterThinking];
+        if (nextTool && isGroupableToolMessage(nextTool) && nextTool.toolName === message.toolName) {
+          if (showThinking) {
+            run.push(...messages.slice(nextIndex, afterThinking));
+          }
+          run.push(nextTool);
+          toolMessages.push(nextTool);
+          nextIndex = afterThinking + 1;
+          continue;
+        }
+        if (!showThinking) {
+          nextIndex = afterThinking;
+          continue;
+        }
+        // The next visible row is reasoning, not part of this tool run.
+        break;
       }
 
       if (isGroupableToolMessage(candidate) && candidate.toolName === message.toolName) {
         run.push(candidate);
+        toolMessages.push(candidate);
         nextIndex += 1;
         continue;
       }
@@ -115,13 +130,13 @@ export function groupConsecutiveTools(
       break;
     }
 
-    if (run.length >= TOOL_GROUP_THRESHOLD) {
+    if (toolMessages.length >= TOOL_GROUP_THRESHOLD) {
       items.push({
         _isGroup: true,
         toolName: message.toolName,
         messages: run,
         timestamp: message.timestamp,
-        preview: buildGroupPreview(run),
+        preview: buildGroupPreview(toolMessages),
       });
     } else {
       items.push(...run);

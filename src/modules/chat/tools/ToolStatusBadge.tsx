@@ -1,6 +1,7 @@
-import { cn } from '@/shared/utils';
-import type { ToolStatus } from '@/shared/types';
+import { useTranslation } from 'react-i18next';
 
+import type { ToolStatus } from '@/shared/types';
+import { cn } from '@/shared/utils';
 
 const STATUS_CONFIG: Record<ToolStatus, { label: string; className: string }> = {
   running: {
@@ -31,6 +32,7 @@ type ToolStatusBadgeProps = {
  * tool call's pending, running, error or denied state.
  */
 export function ToolStatusBadge({ status, className }: ToolStatusBadgeProps) {
+  const { t } = useTranslation('chat');
   const config = STATUS_CONFIG[status];
   return (
     <span
@@ -40,7 +42,7 @@ export function ToolStatusBadge({ status, className }: ToolStatusBadgeProps) {
         className,
       )}
     >
-      {config.label}
+      {t(`tools.status.${status}`, { defaultValue: config.label })}
     </span>
   );
 }

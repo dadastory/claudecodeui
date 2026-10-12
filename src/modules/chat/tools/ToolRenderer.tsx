@@ -1,4 +1,6 @@
 import React, { memo, useMemo, useCallback } from 'react';
+import { BookOpen, ChevronDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import type { DiffLine, Project,ToolStatus } from '@/shared/types';
 import { formatToolDisplayName, getToolConfig } from '@/modules/chat/tools/configs/toolConfigs';
@@ -69,6 +71,24 @@ function deriveToolStatus(toolResult: any, reportedStatus?: string): ToolStatus 
   return 'completed';
 }
 
+function getSkillCall(toolName: string, input: unknown): { name: string; source: string } | null {
+  if (!input || typeof input !== 'object') return null;
+  const data = input as Record<string, unknown>;
+  if (toolName === 'Read') {
+    const path = typeof data.file_path === 'string' ? data.file_path : '';
+    if (!/(?:^|[/\\])SKILL\.md$/i.test(path)) return null;
+    const parts = path.split(/[/\\]/);
+    return { name: parts.at(-2) || '', source: path };
+  }
+  if (toolName === 'Skill') {
+    const name = [data.skill, data.skill_name, data.name].find(
+      (value): value is string => typeof value === 'string' && value.trim().length > 0,
+    ) || '';
+    return { name, source: JSON.stringify(input, null, 2) };
+  }
+  return null;
+}
+
 /**
  * Main tool renderer router
  * Routes to OneLineDisplay or CollapsibleDisplay based on tool config
@@ -89,6 +109,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
   rawToolInput,
   toolStatus: reportedStatus,
 }) => {
+  const { t } = useTranslation('chat');
   const config = getToolConfig(toolName);
   const displayConfig: any = mode === 'input' ? config.input : config.result;
   // Namespaced MCP ids are unreadable as-is; every renderer gets the friendly
@@ -105,6 +126,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
     () => mode === 'input' ? deriveToolStatus(toolResult, reportedStatus) : undefined,
     [mode, toolResult, reportedStatus],
   );
+  const skillCall = mode === 'input' ? getSkillCall(toolName, parsedData) : null;
 
   const handleAction = useCallback(() => {
     if (!IS_LLM4AD_EMBEDDED && displayConfig?.action === 'open-file' && onFileOpen) {
@@ -114,6 +136,32 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
   }, [displayConfig, parsedData, onFileOpen]);
 
   if (!displayConfig) return null;
+
+  if (skillCall) {
+    const skillLabel = skillCall.name || t('tools.skill.unknown');
+    const skillStatusLabel = toolStatus === 'running'
+      ? t('tools.skill.active')
+      : toolStatus === 'error' || toolStatus === 'denied'
+        ? t('tools.skill.failed')
+        : t('tools.skill.complete');
+    return (
+      <details className="group/skill my-1 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-sm">
+        <summary className="flex cursor-pointer list-none items-center gap-2 marker:hidden [&::-webkit-details-marker]:hidden">
+          <BookOpen className="h-4 w-4 shrink-0 text-primary/75" aria-hidden />
+          <span className="shrink-0 text-muted-foreground">
+            {skillStatusLabel}
+          </span>
+          <span className="min-w-0 truncate font-medium text-foreground" title={skillLabel}>{skillLabel}</span>
+          {toolStatus && toolStatus !== 'completed' && <ToolStatusBadge status={toolStatus} className="ml-auto" />}
+          <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-open/skill:rotate-180" aria-hidden />
+        </summary>
+        <div className="mt-2 border-t border-border/60 pt-2 text-xs text-muted-foreground">
+          <span className="font-medium">{t('tools.skill.source')}</span>
+          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono">{skillCall.source}</pre>
+        </div>
+      </details>
+    );
+  }
 
   // Bash renders as a Codex-style command row: the command on a single line with
   // a chevron that expands to show the output inline. The combined view lives on
@@ -158,7 +206,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
         toolResult={toolResult}
         toolId={toolId}
         icon={displayConfig.icon}
-        label={displayConfig.label}
+        label={toolName === 'Read' ? t('tools.read') : displayConfig.label}
         value={value}
         secondary={secondary}
         action={displayConfig.action}
