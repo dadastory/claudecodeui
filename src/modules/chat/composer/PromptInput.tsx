@@ -39,12 +39,18 @@ export const PromptInput = React.forwardRef<HTMLFormElement, PromptInputProps>(
         <form
           ref={ref}
           data-slot="prompt-input"
+          aria-busy={status === 'submitted' || status === 'streaming'}
           className={cn(
             'relative overflow-hidden rounded-xl border border-border/50 bg-card/80 shadow-sm backdrop-blur-sm transition-all duration-200 focus-within:border-primary/30 focus-within:shadow-md focus-within:ring-1 focus-within:ring-primary/15',
             className
           )}
           {...props}
         >
+          {(status === 'submitted' || status === 'streaming') && (
+            <svg className="chat-input-running-ring" aria-hidden="true">
+              <rect x="1" y="1" width="calc(100% - 2px)" height="calc(100% - 2px)" rx="12" pathLength="100" />
+            </svg>
+          )}
           {children}
         </form>
       </PromptInputContext.Provider>

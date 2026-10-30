@@ -42,3 +42,12 @@ test('the button cannot be rendered outside PromptInput', () => {
     /within PromptInput/,
   );
 });
+
+test('the running border starts with a submitted request and clears when idle', () => {
+  const { container, rerender } = render(<PromptInput status="submitted"><PromptInputSubmit /></PromptInput>);
+  assert.equal(container.querySelector('form')?.getAttribute('aria-busy'), 'true');
+  assert.ok(container.querySelector('.chat-input-running-ring rect'));
+  rerender(<PromptInput status="ready"><PromptInputSubmit /></PromptInput>);
+  assert.equal(container.querySelector('form')?.getAttribute('aria-busy'), 'false');
+  assert.equal(container.querySelector('.chat-input-running-ring'), null);
+});

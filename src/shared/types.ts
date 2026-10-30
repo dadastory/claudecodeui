@@ -586,10 +586,30 @@ export type QueuedDraft = {
 /** Viewport-relative placement box (right/bottom offsets plus max height and width) computed for a composer popover so the model and permission menus stay inside the window. */
 export type ComposerMenuAnchor = {
   right: number;
+  left?: number;
   bottom: number;
   maxHeight: number;
   maxWidth: number;
 };
+
+//----------------- EMBEDDED PLATFORM MODELS ------------
+
+/** Credential-free model binding owned and persisted by the authenticated host. */
+export type EmbeddedModelBinding = {
+  provider_id: string;
+  model_name: string;
+  context_window_tokens: number;
+  max_output_tokens: number;
+};
+
+/** Display-only model choice; provider credentials must never cross the iframe bridge. */
+export type EmbeddedModelOption = {
+  provider_id: string;
+  provider_name: string;
+  model_name: string;
+};
+
+// ---------------------------
 
 /** One selectable slash command — built-in, user-defined or skill-backed — as listed in the chat composer's command menu and executed when the user picks it. */
 export type SlashCommand = {

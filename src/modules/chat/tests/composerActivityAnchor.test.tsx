@@ -5,9 +5,10 @@ import React from 'react';
 import { test, vi } from 'vitest';
 
 import ChatComposer from '@/modules/chat/composer/ChatComposer';
+import type * as SharedUtils from '@/shared/utils';
 
 vi.mock('@/shared/utils', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/shared/utils')>(),
+  ...await importOriginal<typeof SharedUtils>(),
   IS_LLM4AD_EMBEDDED: true,
 }));
 vi.mock('@/modules/chat/hooks/useVoiceAvailable', () => ({ useVoiceAvailable: () => false }));
@@ -32,6 +33,7 @@ test('activity and stop controls follow the composer input container', () => {
     availableModelOptions: [],
     onSelectModel: noop,
     modelsLoading: false,
+    settingsError: 'Could not save the selected model',
     tokenBudget: null,
     onShowTokenUsage: noop,
     slashCommandsCount: 0,
@@ -89,4 +91,7 @@ test('activity and stop controls follow the composer input container', () => {
   assert.ok(anchor?.classList.contains('bottom-full'));
   assert.ok(anchor?.classList.contains('right-0'));
   assert.equal(container.querySelectorAll('.chat-activity-tab').length, 2);
+  const error = container.querySelector('[role="alert"]');
+  assert.equal(error?.textContent?.trim(), 'Could not save the selected model');
+  assert.equal(error?.closest('[data-slot="prompt-input-tools"]'), null);
 });

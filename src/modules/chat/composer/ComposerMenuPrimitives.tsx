@@ -8,7 +8,7 @@ import type { ComposerMenuAnchor } from '@/shared/types';
  * Shared shell for the composer popovers (model/effort and permissions) so both
  * menus share one surface, one heading style and one row style.
  *
- * Used by chat's ComposerModelMenu and ComposerPermissionMenu.
+ * Used by chat's model, permission and embedded platform model controls.
  */
 export function ComposerMenuSurface({
   anchor,
@@ -28,7 +28,8 @@ export function ComposerMenuSurface({
       aria-label={ariaLabel}
       className="fixed z-[100] min-w-48 overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-xl"
       style={{
-        right: anchor.right,
+        right: anchor.left === undefined ? anchor.right : undefined,
+        left: anchor.left,
         bottom: anchor.bottom,
         maxHeight: anchor.maxHeight,
         maxWidth: anchor.maxWidth,
@@ -39,7 +40,7 @@ export function ComposerMenuSurface({
   );
 }
 
-/** Used by chat's ComposerModelMenu and ComposerPermissionMenu to label a section of the popover. */
+/** Used by chat's native and embedded composer menus to label provider sections. */
 export function ComposerMenuHeading({ children }: { children: ReactNode }) {
   return (
     <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-muted-foreground">{children}</p>
@@ -51,7 +52,7 @@ export function ComposerMenuSeparator() {
   return <div className="my-1 h-px bg-border" aria-hidden />;
 }
 
-/** Used by chat's ComposerModelMenu and ComposerPermissionMenu to render one selectable row with its checked state. */
+/** Used by chat's native and embedded composer menus to render selectable rows. */
 export function ComposerMenuItem({
   label,
   description,

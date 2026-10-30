@@ -268,6 +268,22 @@
     "forkFromHere": "从此处派生"
   },
   "composer": {
+    "preferences": "偏好设置",
+    "preferencesHint": "调整助手解释与建议的展示方式，不改变产物的语言要求。",
+    "replyLanguage": "回复语言",
+    "language": {"auto": "自动", "zh": "中文", "en": "English"},
+    "extraGuidance": "额外偏好提示",
+    "platformModel": "切换模型",
+    "contextSettings": "上下文设置",
+    "searchModels": "搜索模型或供应商…",
+    "noMatchingModels": "没有匹配的模型。",
+    "contextHint": "作用于当前工作区。切换模型时保留这些设置。",
+    "contextWindow": "上下文窗口（Token）",
+    "outputLimit": "最大输出 Token",
+    "invalidContext": "上下文窗口至少为 8,192，最大输出需介于 1,024 和上下文窗口之间。",
+    "cancel": "取消",
+    "apply": "应用",
+    "loadingModels": "正在加载模型…",
     "editing": {
       "title": "正在替换先前的消息",
       "filesNotReverted": "已修改的文件不会被还原",

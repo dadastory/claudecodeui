@@ -37,6 +37,8 @@ import { ScheduledMessageList } from '@/modules/chat/composer/ScheduledMessageLi
 import ComposerModelMenu from '@/modules/chat/composer/ComposerModelMenu';
 import ComposerPermissionMenu from '@/modules/chat/composer/ComposerPermissionMenu';
 import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
+import { EmbeddedModelControls } from '@/modules/chat/composer/EmbeddedModelControls';
+import { EmbeddedPreferenceControls } from '@/modules/chat/composer/EmbeddedPreferenceControls';
 
 type MentionableFile = {
   name: string;
@@ -64,6 +66,8 @@ type ChatComposerProps = {
   availableModelOptions: ProviderModelOption[];
   onSelectModel: (model: string) => void;
   modelsLoading: boolean;
+  modelUpdating?: boolean;
+  settingsError?: string;
   tokenBudget: Record<string, unknown> | null;
   onShowTokenUsage: () => void;
   slashCommandsCount: number;
@@ -139,6 +143,8 @@ export default function ChatComposer({
   availableModelOptions,
   onSelectModel,
   modelsLoading,
+  modelUpdating = false,
+  settingsError,
   tokenBudget,
   onShowTokenUsage,
   slashCommandsCount,
@@ -445,6 +451,8 @@ export default function ChatComposer({
 
         <PromptInputFooter className="flex-wrap gap-y-1">
           <PromptInputTools className="min-w-0">
+            {IS_LLM4AD_EMBEDDED && <EmbeddedModelControls disabled={isLoading} />}
+            {IS_LLM4AD_EMBEDDED && <EmbeddedPreferenceControls disabled={isLoading} />}
             {!IS_LLM4AD_EMBEDDED && (
               <PromptInputButton
                 tooltip={{ content: t('input.attachFiles') }}
@@ -538,7 +546,9 @@ export default function ChatComposer({
                       : undefined
               }
               disabled={
-                isLoading
+                modelUpdating && !isLoading
+                  ? true
+                  : isLoading
                   ? false
                   : isRecording
                     ? false
@@ -567,6 +577,11 @@ export default function ChatComposer({
             {submitHint}
           </div>
         </PromptInputFooter>
+        {settingsError && (
+          <p role="alert" className="max-w-full break-words px-4 pb-3 text-xs leading-5 text-destructive">
+            {settingsError}
+          </p>
+        )}
       </PromptInput>
       </div>}
     </div>

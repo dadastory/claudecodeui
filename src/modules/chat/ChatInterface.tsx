@@ -513,6 +513,8 @@ function ChatInterface({
           availableModelOptions={currentProviderModelOptions}
           onSelectModel={handleSelectComposerModel}
           modelsLoading={providerModelsLoading}
+          modelUpdating={IS_LLM4AD_EMBEDDED && (embeddedHost.modelUpdating || embeddedHost.preferencesUpdating)}
+          settingsError={IS_LLM4AD_EMBEDDED ? embeddedHost.modelError || embeddedHost.preferencesError : undefined}
           tokenBudget={tokenBudget}
           onShowTokenUsage={showCostModal}
           isEditingSentMessage={Boolean(editingAnchorId)}

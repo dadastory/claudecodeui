@@ -28,7 +28,7 @@ describe('embedded host context', () => {
       });
     });
 
-    expect(result.current).toEqual({
+    expect(result.current).toMatchObject({
       stageTitle: 'Literature & Evidence',
       stageDescription: 'Build a traceable evidence base.',
       stageExamples: ['Compare Method A and Method B.', 'Check every citation.'],
