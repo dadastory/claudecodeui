@@ -160,8 +160,9 @@
   "composer": {
     "preferences": "Preferences",
     "preferencesHint": "Choose how the assistant explains suggestions. These preferences do not set the language of deliverables.",
+    "preferencesAutoDesignHint": "Replies, suggestions and project documentation such as README follow this preference. Code and configuration fields are preserved.",
     "replyLanguage": "Reply language",
-    "language": {"auto": "Auto", "zh": "中文", "en": "English"},
+    "language": {"auto": "Follow browser", "zh": "中文", "en": "English"},
     "extraGuidance": "Additional guidance",
     "platformModel": "Switch model",
     "contextSettings": "Context settings",

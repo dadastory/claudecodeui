@@ -71,7 +71,7 @@ export function EmbeddedPreferenceControls({
           >
             <h3 className="text-sm font-semibold">{label}</h3>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              {t('composer.preferencesHint')}
+              {t(host.stage === 'autodesign' ? 'composer.preferencesAutoDesignHint' : 'composer.preferencesHint')}
             </p>
             <div
               role="group"

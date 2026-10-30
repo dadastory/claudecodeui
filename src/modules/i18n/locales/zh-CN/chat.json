@@ -270,8 +270,9 @@
   "composer": {
     "preferences": "偏好设置",
     "preferencesHint": "调整助手解释与建议的展示方式，不改变产物的语言要求。",
+    "preferencesAutoDesignHint": "回复、建议和项目 README 等说明文档遵循此偏好；代码和配置字段保持原样。",
     "replyLanguage": "回复语言",
-    "language": {"auto": "自动", "zh": "中文", "en": "English"},
+    "language": {"auto": "跟随浏览器", "zh": "中文", "en": "English"},
     "extraGuidance": "额外偏好提示",
     "platformModel": "切换模型",
     "contextSettings": "上下文设置",
