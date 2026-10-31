@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { copyTextToClipboard } from '@/shared/utils';
+import { copyTextToClipboard, IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 import { ToolStatusBadge } from '@/modules/chat/tools/ToolStatusBadge';
 import type { ToolStatus } from '@/shared/types';
 
@@ -105,9 +105,9 @@ export const OneLineDisplay: React.FC<OneLineDisplayProps> = ({
             </svg>
           </div>
           <div className="flex min-w-0 flex-1 items-start gap-2">
-            <div className="min-w-0 flex-1 rounded bg-gray-900 px-2.5 py-1 dark:bg-black">
-              <code className={`font-mono text-xs text-green-400 ${wrapText ? 'whitespace-pre-wrap break-all' : 'block truncate'}`}>
-                <span className="select-none text-green-600 dark:text-green-500">$ </span>{value}
+            <div className={`min-w-0 flex-1 px-2.5 ${IS_LLM4AD_EMBEDDED ? 'rounded-lg border border-border/50 bg-muted/30 py-1.5' : 'rounded bg-gray-900 py-1 dark:bg-black'}`}>
+              <code className={`font-mono text-xs ${IS_LLM4AD_EMBEDDED ? 'text-foreground' : 'text-green-400'} ${wrapText ? 'whitespace-pre-wrap break-all' : 'block truncate'}`}>
+                <span className={`select-none ${IS_LLM4AD_EMBEDDED ? 'text-muted-foreground' : 'text-green-600 dark:text-green-500'}`}>$ </span>{value}
               </code>
             </div>
             {status && <ToolStatusBadge status={status} className="mt-0.5" />}

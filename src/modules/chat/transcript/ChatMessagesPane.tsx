@@ -174,7 +174,7 @@ function ChatMessagesPane({
       onWheel={onWheel}
       onTouchMove={onTouchMove}
       className={`chat-messages-pane relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden pt-3 sm:pt-4 ${
-        hasActivityIndicator ? 'pb-12 sm:pb-14' : 'pb-3 sm:pb-4'
+        hasActivityIndicator && !IS_LLM4AD_EMBEDDED ? 'pb-12 sm:pb-14' : 'pb-3 sm:pb-4'
       }`}
     >
       {chatMessages.length > 0 && (
@@ -193,7 +193,7 @@ function ChatMessagesPane({
       )}
       <div
         className={`mx-auto w-full space-y-4 px-3 sm:px-4 ${
-          IS_LLM4AD_EMBEDDED ? 'max-w-none sm:space-y-5' : 'max-w-[54.25rem]'
+          IS_LLM4AD_EMBEDDED ? 'max-w-none' : 'max-w-[54.25rem]'
         }`}
       >
       {(isLoadingSessionMessages || isProcessing) && chatMessages.length === 0 ? (

@@ -282,7 +282,7 @@ export default function ChatComposer({
       className={`chat-composer-shell relative flex-shrink-0 px-2 pt-0 ${
         IS_LLM4AD_EMBEDDED ? 'sm:px-3' : 'sm:px-4'
       } ${
-        IS_LLM4AD_EMBEDDED ? 'pb-4 sm:pb-5' : 'pb-2 sm:pb-4 md:pb-6'
+        IS_LLM4AD_EMBEDDED ? 'pb-3' : 'pb-2 sm:pb-4 md:pb-6'
       }`}
     >
       {pendingPermissionRequests.length > 0 && (
@@ -330,7 +330,7 @@ export default function ChatComposer({
       )}
 
       {!hasQuestionPanel && <div className={`relative mx-auto ${IS_LLM4AD_EMBEDDED ? 'max-w-none' : 'max-w-[54.25rem]'}`}>
-        {!hasPendingPermissions && (
+        {!hasPendingPermissions && !IS_LLM4AD_EMBEDDED && (
           <div className="pointer-events-none absolute bottom-full left-0 right-0 z-10 translate-y-px bg-transparent">
             <ActivityIndicator activity={activity} onAbort={onAbortSession} isInputFocused={isInputFocused} />
           </div>
@@ -383,13 +383,16 @@ export default function ChatComposer({
           status={isLoading ? 'streaming' : 'ready'}
           className={[
             isTextareaExpanded ? 'chat-input-expanded' : '',
-            hasActivityIndicator ? 'rounded-t-none' : '',
+            hasActivityIndicator && !IS_LLM4AD_EMBEDDED ? 'rounded-t-none' : '',
             IS_LLM4AD_EMBEDDED
-              ? 'rounded-xl border-border/80 bg-card shadow-[0_10px_30px_-20px_hsl(var(--foreground)/0.45)]'
+              ? 'llm4ad-composer rounded-2xl border-primary/20 bg-card shadow-sm backdrop-blur-none transition-[border-color,box-shadow] focus-within:border-primary/40'
               : '',
           ].filter(Boolean).join(' ')}
           {...(!IS_LLM4AD_EMBEDDED ? getRootProps() : {})}
         >
+          {IS_LLM4AD_EMBEDDED && !hasPendingPermissions && (
+            <ActivityIndicator activity={activity} onAbort={onAbortSession} isInputFocused={isInputFocused} />
+          )}
           {!IS_LLM4AD_EMBEDDED && isDragActive && (
             <div className="absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/50 bg-primary/15">
               <div className="rounded-xl border border-border/30 bg-card p-4 shadow-lg">
@@ -445,7 +448,7 @@ export default function ChatComposer({
               onBlur={() => onInputFocusChange?.(false)}
               onInput={onTextareaInput}
               placeholder={placeholder}
-              className={IS_LLM4AD_EMBEDDED ? 'min-h-[4.75rem] text-[15px] leading-7' : undefined}
+              className={IS_LLM4AD_EMBEDDED ? 'min-h-[4.5rem] py-3 text-sm leading-6' : undefined}
             />
         </PromptInputBody>
 

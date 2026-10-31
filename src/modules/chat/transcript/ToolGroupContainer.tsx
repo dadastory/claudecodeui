@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { BookOpen, ChevronRight, Files, SquareTerminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { ChatMessage, ClaudePermissionSuggestion, PermissionGrantResult, LLMProvider,DiffLine,DiffStats,Project,ToolGroupItem } from '@/shared/types';
@@ -9,6 +9,7 @@ import { useIsExportingTranscript } from '@/modules/chat/context/TranscriptRende
 import { DiffStatsBadge } from '@/modules/chat/tools/DiffStatsBadge';
 import { ToolStatusBadge } from '@/modules/chat/tools/ToolStatusBadge';
 import { parseToolPayload, summarizeDiff } from '@/modules/chat/utils/messageTransforms';
+import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
 type ToolGroupContainerProps = {
   group: ToolGroupItem;
@@ -113,6 +114,7 @@ function ToolGroupContainer({
   const borderClass = config.colorScheme?.border || 'border-border';
   const iconClass = config.colorScheme?.icon || 'text-muted-foreground';
   const icon = getToolGroupIcon(config.icon, group.toolName);
+  const GroupIcon = isSkillGroup ? BookOpen : group.toolName === 'Read' ? Files : SquareTerminal;
 
   const preview = isSkillGroup
     ? toolMessages.slice(0, 2).map((message) => {
@@ -128,10 +130,13 @@ function ToolGroupContainer({
   const groupDiffStats = useGroupDiffStats(group.toolName, toolMessages, createDiff);
 
   return (
-    <div className="chat-message tool px-3 sm:px-0" data-message-timestamp={group.timestamp || undefined}>
+    <div
+      className={`chat-message tool ${IS_LLM4AD_EMBEDDED ? `min-w-0 overflow-hidden rounded-xl border bg-card/40 ${hasFailure || hasDenied ? 'border-destructive/30' : 'border-border/50'}` : 'px-3 sm:px-0'}`}
+      data-message-timestamp={group.timestamp || undefined}
+    >
       <button
         type="button"
-        className={`group flex w-full items-center gap-2 border-l-2 ${borderClass} rounded-r-md bg-muted/25 px-3 py-2 text-left transition-colors hover:bg-muted/40 dark:bg-muted/10 dark:hover:bg-muted/20`}
+        className={`group flex w-full min-w-0 items-center gap-2 px-3 text-left transition-colors hover:bg-muted/40 ${IS_LLM4AD_EMBEDDED ? 'py-2.5' : `border-l-2 ${borderClass} rounded-r-md bg-muted/25 py-2 dark:bg-muted/10 dark:hover:bg-muted/20`}`}
         onClick={() => setIsExpanded((current) => !current)}
         aria-expanded={isExpanded}
       >
@@ -139,12 +144,12 @@ function ToolGroupContainer({
           className={`h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`}
           aria-hidden
         />
-        <span className={`${iconClass} flex h-5 w-5 flex-shrink-0 items-center justify-center rounded bg-background/80 text-xs font-medium`}>
-          {icon}
+        <span className={`flex h-5 w-5 flex-shrink-0 items-center justify-center text-xs font-medium ${IS_LLM4AD_EMBEDDED ? 'text-primary' : `${iconClass} rounded bg-background/80`}`}>
+          {IS_LLM4AD_EMBEDDED ? <GroupIcon className="h-3.5 w-3.5" aria-hidden /> : icon}
         </span>
-        <span className="min-w-0 flex-shrink-0 text-xs font-medium text-foreground">{label}</span>
+        <span className={`min-w-0 flex-shrink-0 font-medium text-foreground ${IS_LLM4AD_EMBEDDED ? 'max-w-[45%] truncate text-sm' : 'text-xs'}`}>{label}</span>
         <span className="flex-shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-          x{toolMessages.length}
+          {IS_LLM4AD_EMBEDDED ? '×' : 'x'}{toolMessages.length}
         </span>
         {preview && (
           <>
@@ -168,7 +173,7 @@ function ToolGroupContainer({
       </button>
 
       {showChildren && (
-        <div className="mt-2 space-y-3 sm:space-y-4">
+        <div className={IS_LLM4AD_EMBEDDED ? 'flex flex-col gap-3 border-t border-border/40 p-3' : 'mt-2 space-y-3 sm:space-y-4'}>
           {group.messages.map((message, index) => (
             <MessageComponent
               key={getMessageKey(message)}

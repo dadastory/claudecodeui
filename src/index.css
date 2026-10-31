@@ -573,6 +573,53 @@
 
 /* Mobile optimizations and components */
 @layer components {
+  /* Embedded research replies inherit the platform's type and colour system. */
+  .llm4ad-message-content {
+    font-family: inherit;
+    --tw-prose-body: hsl(var(--foreground));
+    --tw-prose-headings: hsl(var(--foreground));
+    --tw-prose-bold: hsl(var(--foreground));
+    --tw-prose-links: hsl(var(--primary));
+    --tw-prose-invert-body: hsl(var(--foreground));
+    --tw-prose-invert-headings: hsl(var(--foreground));
+    --tw-prose-invert-bold: hsl(var(--foreground));
+    --tw-prose-invert-links: hsl(var(--primary));
+  }
+
+  .llm4ad-message-content :is(p, ul, ol) {
+    margin-block: 0.5rem;
+    line-height: 1.75;
+  }
+
+  .llm4ad-message-content :is(h1, h2, h3, h4) {
+    font-size: 1em;
+    font-weight: 600;
+    line-height: 1.6;
+    margin-block: 1rem 0.5rem;
+  }
+
+  .llm4ad-message-content > :first-child {
+    margin-top: 0;
+  }
+
+  .llm4ad-message-content > :last-child {
+    margin-bottom: 0;
+  }
+
+  :root[data-llm4ad-embedded="true"] .llm4ad-message-content pre {
+    overflow-x: auto;
+  }
+
+  :root[data-llm4ad-embedded="true"] .llm4ad-message-content pre code {
+    white-space: pre !important;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+
+  .llm4ad-composer .chat-input-running-ring rect {
+    rx: 16px;
+  }
+
   .chat-messages-pane {
     contain: layout style paint;
   }

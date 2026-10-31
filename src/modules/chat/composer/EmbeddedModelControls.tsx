@@ -78,7 +78,7 @@ export function EmbeddedModelControls({ disabled }: { disabled: boolean }) {
         aria-haspopup="menu"
         aria-expanded={menu === 'models'}
         title={`${label}: ${binding.model_name}`}
-        className="flex h-8 min-w-0 max-w-48 items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-2 text-sm text-foreground hover:bg-muted disabled:opacity-50 sm:max-w-72"
+        className="flex h-8 min-w-0 max-w-48 items-center gap-1.5 rounded-lg bg-muted/40 px-2 text-sm text-foreground transition-colors hover:bg-muted disabled:opacity-50 sm:max-w-72"
         onClick={() => {
           updateModelAnchor();
           setQuery('');

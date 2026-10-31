@@ -84,11 +84,10 @@ function ReviewPasteStarter({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="mt-7 border border-primary/25 bg-primary/[0.025] p-4 sm:p-5">
+    <form onSubmit={handleSubmit} className="mt-6 rounded-2xl border border-border/60 bg-card/60 p-4">
       <div className="flex items-start gap-3">
-        <span className="mt-1 block h-7 w-1 shrink-0 bg-primary/70" aria-hidden="true" />
         <div className="min-w-0">
-          <h3 className="font-serif text-lg font-semibold text-foreground">
+          <h3 className="text-sm font-semibold text-foreground">
             {t('session.continue.reviewPasteTitle')}
           </h3>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -407,21 +406,21 @@ export default function ProviderSelectionEmptyState({
 
   if (selectedSession && IS_LLM4AD_EMBEDDED) {
     return (
-      <div className="flex h-full overflow-y-auto px-4 py-6">
+      <div className="flex h-full overflow-y-auto px-1 py-4">
         <div className="my-auto w-full max-w-none">
-          <div className="border-l-2 border-primary/60 pl-5">
+          <div className="rounded-2xl border border-border/50 bg-card/60 p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-primary">
               <BookOpenText aria-hidden="true" className="h-4 w-4" />
               <span>{embeddedHost.stageTitle || t("input.embeddedStageFallback")}</span>
             </div>
-            <h2 className="font-serif text-2xl font-semibold leading-tight tracking-tight text-foreground sm:text-3xl">
+            <h2 className="text-lg font-semibold leading-7 tracking-tight text-foreground">
               {t("session.continue.embeddedTitle", {
                 stage:
                   embeddedHost.stageTitle ||
                   t("input.embeddedStageFallback"),
               })}
             </h2>
-            <p className="mt-3 max-w-2xl text-[15px] leading-7 text-muted-foreground">
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
               {embeddedHost.stageDescription ||
                 t("session.continue.embeddedDescription")}
             </p>
@@ -432,24 +431,24 @@ export default function ProviderSelectionEmptyState({
           )}
 
           {stageExamples.length > 0 && (
-            <section className="mt-8 border-y border-border/80 text-left">
-              <div className="py-4">
-                <h3 className="font-serif text-lg font-semibold text-foreground">
+            <section className="mt-5 text-left">
+              <div className="mb-3">
+                <h3 className="text-sm font-semibold text-foreground">
                   {t("session.continue.guideTitle")}
                 </h3>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
                   {t("session.continue.guideDescription")}
                 </p>
               </div>
-              <div className="divide-y divide-border/70 border-t border-border/70">
+              <div className="flex flex-col gap-2">
                 {stageExamples.map((example, index) => (
                   <button
                     key={example}
                     type="button"
-                    className="group flex w-full items-start gap-4 px-1 py-4 text-left transition-colors hover:bg-primary/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-3"
+                    className="group flex w-full items-start gap-3 rounded-xl border border-border/50 bg-card/40 px-3 py-3 text-left transition-colors hover:border-primary/30 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                     onClick={() => applyStageExample(example)}
                   >
-                    <span className="w-8 shrink-0 font-serif text-xl tabular-nums leading-6 text-muted-foreground/65">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-xs tabular-nums text-muted-foreground">
                       {String(index + 1).padStart(2, "0")}
                     </span>
                     <span className="min-w-0 flex-1 text-sm leading-6 text-foreground/90">
@@ -457,7 +456,7 @@ export default function ProviderSelectionEmptyState({
                     </span>
                     <ArrowUpRight
                       aria-hidden="true"
-                      className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary motion-reduce:transition-none"
+                      className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/50 group-hover:text-primary"
                     />
                   </button>
                 ))}

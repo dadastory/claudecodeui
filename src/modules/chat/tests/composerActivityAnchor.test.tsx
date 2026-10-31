@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import React from 'react';
 import { test, vi } from 'vitest';
 
@@ -15,13 +15,15 @@ vi.mock('@/modules/chat/hooks/useVoiceAvailable', () => ({ useVoiceAvailable: ()
 
 test('activity and stop controls follow the composer input container', () => {
   const noop = () => undefined;
+  const abort = vi.fn();
+  const submit = vi.fn();
   const props: React.ComponentProps<typeof ChatComposer> = {
     pendingPermissionRequests: [],
     handlePermissionDecision: noop,
     handleGrantToolPermission: () => ({ success: true }),
     activity: { statusText: 'Working', canInterrupt: true, startedAt: Date.now() },
     isLoading: true,
-    onAbortSession: noop,
+    onAbortSession: abort,
     permissionMode: 'default',
     availablePermissionModes: [],
     onSelectPermissionMode: noop,
@@ -40,7 +42,7 @@ test('activity and stop controls follow the composer input container', () => {
     onToggleCommandMenu: noop,
     hasInput: false,
     onClearInput: noop,
-    onSubmit: noop,
+    onSubmit: submit,
     isDragActive: false,
     queuedDraft: null,
     isEditingSentMessage: false,
@@ -82,15 +84,17 @@ test('activity and stop controls follow the composer input container', () => {
 
   const { container } = render(<ChatComposer {...props} />);
   const input = container.querySelector('[data-slot="prompt-input"]');
-  const activity = container.querySelector('.chat-activity-tab');
-  const anchor = activity?.parentElement?.parentElement?.parentElement;
+  const activity = container.querySelector('.llm4ad-composer-activity');
+  const stop = activity?.querySelector('button');
 
   assert.ok(input);
   assert.ok(activity);
-  assert.equal(anchor?.parentElement, input.parentElement);
-  assert.ok(anchor?.classList.contains('bottom-full'));
-  assert.ok(anchor?.classList.contains('right-0'));
-  assert.equal(container.querySelectorAll('.chat-activity-tab').length, 2);
+  assert.equal(activity.closest('form'), input);
+  assert.ok(stop);
+  assert.equal(stop.type, 'button');
+  fireEvent.click(stop);
+  assert.equal(abort.mock.calls.length, 1);
+  assert.equal(submit.mock.calls.length, 0);
   const error = container.querySelector('[role="alert"]');
   assert.equal(error?.textContent?.trim(), 'Could not save the selected model');
   assert.equal(error?.closest('[data-slot="prompt-input-tools"]'), null);

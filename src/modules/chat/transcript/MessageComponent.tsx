@@ -95,7 +95,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
     <div
       ref={messageRef}
       data-message-timestamp={message.timestamp || undefined}
-      className={`chat-message ${message.type} ${isGrouped ? 'grouped' : ''} ${message.type === 'user' ? 'flex justify-end px-3 sm:px-0' : 'px-3 sm:px-0'}`}
+      className={`chat-message ${message.type} ${isGrouped ? 'grouped' : ''} ${message.type === 'user' ? 'flex justify-end' : ''} ${IS_LLM4AD_EMBEDDED ? 'min-w-0' : 'px-3 sm:px-0'}`}
     >
       {message.type === 'user' ? (
         /* User turn on the right: claude.ai-style attachment cards above the bubble */
@@ -111,11 +111,11 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
               <ChatMessageFiles files={message.files} />
             )}
             {userCopyContent.trim().length > 0 || (!message.images?.length && !message.files?.length) ? (
-              <div className={`group max-w-full border px-4 py-3 text-foreground shadow-sm ${IS_LLM4AD_EMBEDDED ? 'rounded-xl rounded-br-sm border-primary/15 bg-primary/[0.045]' : 'rounded-2xl rounded-br-md border-border/60 bg-muted/60 dark:bg-gray-800/60'}`}>
-                <div dir="auto" className={`break-words font-serif ${IS_LLM4AD_EMBEDDED ? 'text-[15px] leading-7' : 'text-sm'}`}>
+              <div className={`group max-w-full border px-4 py-3 text-foreground shadow-sm ${IS_LLM4AD_EMBEDDED ? 'rounded-2xl rounded-tr-sm border-primary/20 bg-primary/10' : 'rounded-2xl rounded-br-md border-border/60 bg-muted/60 dark:bg-gray-800/60'}`}>
+                <div dir="auto" className={`break-words text-sm ${IS_LLM4AD_EMBEDDED ? 'leading-6' : 'font-serif'}`}>
                   <Markdown
                     breaks
-                    className={`prose max-w-none font-serif dark:prose-invert ${IS_LLM4AD_EMBEDDED ? 'prose-base [&_li]:leading-7 [&_p]:leading-7' : 'prose-sm'}`}
+                    className={`prose prose-sm max-w-none dark:prose-invert ${IS_LLM4AD_EMBEDDED ? 'llm4ad-message-content' : 'font-serif'}`}
                   >
                     {message.content}
                   </Markdown>
@@ -164,7 +164,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
         </div>
       ) : message.isTaskNotification ? (
         /* Compact task notification on the left */
-        <div className={`w-full ${IS_LLM4AD_EMBEDDED && message.type === 'assistant' && !message.isToolUse ? 'border-l border-border/80 pl-4' : ''}`}>
+        <div className="w-full">
           <div className="flex items-center gap-2 py-0.5">
             <span className={`inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${message.taskStatus === 'completed' ? 'bg-green-400 dark:bg-green-500' : 'bg-amber-400 dark:bg-amber-500'}`} />
             <span className="text-xs text-gray-500 dark:text-gray-400">{message.content}</span>
@@ -172,8 +172,8 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
         </div>
       ) : (
         /* Claude/Error/Tool messages on the left */
-        <div className="w-full">
-          {!isGrouped && (
+        <div className={`w-full min-w-0 ${IS_LLM4AD_EMBEDDED && message.type === 'assistant' && !message.isToolUse && !message.isThinking && !message.isSubagentContainer ? 'llm4ad-assistant-reply rounded-2xl rounded-tl-sm border border-border/50 bg-card/60 px-4 py-3 shadow-sm' : ''} ${IS_LLM4AD_EMBEDDED && message.type === 'error' ? 'rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-destructive' : ''}`}>
+          {!isGrouped && !IS_LLM4AD_EMBEDDED && (
             <div className="mb-2 flex items-center space-x-3">
               {message.type === 'error' ? (
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-red-600 text-sm text-white">
@@ -222,7 +222,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
               <>
                 <div className="flex flex-col">
                   <div className="flex flex-col">
-                    <Markdown className="prose prose-sm max-w-none font-serif dark:prose-invert">
+                    <Markdown className={`prose prose-sm max-w-none dark:prose-invert ${IS_LLM4AD_EMBEDDED ? 'llm4ad-message-content' : 'font-serif'}`}>
                       {String(message.displayText || '')}
                     </Markdown>
                   </div>
@@ -276,7 +276,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
               <Reasoning defaultOpen={isExporting}>
                 <ReasoningTrigger />
                 <ReasoningContent>
-                  <Markdown className="prose prose-sm prose-gray max-w-none font-serif dark:prose-invert">
+                  <Markdown className={`prose prose-sm prose-gray max-w-none dark:prose-invert ${IS_LLM4AD_EMBEDDED ? 'llm4ad-message-content' : 'font-serif'}`}>
                     {message.content}
                   </Markdown>
                   {!isExporting && (
@@ -287,7 +287,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
                 </ReasoningContent>
               </Reasoning>
             ) : (
-              <div dir="auto" className={`${IS_LLM4AD_EMBEDDED ? 'text-[15px] leading-7 text-foreground/90' : 'text-sm text-gray-700 dark:text-gray-300'}`}>
+              <div dir="auto" className={`${IS_LLM4AD_EMBEDDED ? 'text-sm leading-6 text-foreground' : 'text-sm text-gray-700 dark:text-gray-300'}`}>
                 {/* Reasoning accordion */}
                 {showThinking && message.reasoning && (
                   <Reasoning className="mb-3" defaultOpen={false}>
@@ -340,7 +340,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
                     <StreamingMarkdown
                       content={content}
                       isStreaming={Boolean(message.isStreaming)}
-                      className={`prose prose-gray max-w-none font-serif dark:prose-invert ${IS_LLM4AD_EMBEDDED ? 'prose-base [&_li]:leading-7 [&_p]:leading-7' : 'prose-sm'}`}
+                      className={`prose prose-sm prose-gray max-w-none dark:prose-invert ${IS_LLM4AD_EMBEDDED ? 'llm4ad-message-content' : 'font-serif'}`}
                     />
                   ) : (
                     <div className="whitespace-pre-wrap">
@@ -358,7 +358,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
             )}
 
             {(shouldShowAssistantCopyControl || !isGrouped) && (
-              <div className="mt-1 flex w-full items-center gap-2 text-[11px] text-gray-400 dark:text-gray-500">
+              <div className={`flex w-full items-center gap-2 text-[11px] ${IS_LLM4AD_EMBEDDED ? 'mt-2 text-muted-foreground' : 'mt-1 text-gray-400 dark:text-gray-500'}`}>
                 {shouldShowAssistantCopyControl && (
                   <MessageCopyControl content={assistantCopyContent} messageType="assistant" />
                 )}
