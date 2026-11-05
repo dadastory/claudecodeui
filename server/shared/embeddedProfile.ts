@@ -1,11 +1,17 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import type { AgentDefinition } from '@anthropic-ai/claude-agent-sdk';
+
 type EmbeddedRuntimeProfile = {
   sessionId: string;
   model: string;
   env?: Record<string, string>;
   skills?: string[];
+  /** Skills preloaded only in the coordinator; worker Skills stay separate. */
+  mainSkills?: string[];
+  /** Stage workers supplied by the research runtime, including their Skills. */
+  agents?: Record<string, AgentDefinition>;
   mcpServers?: Record<string, unknown>;
   toolsSettings?: {
     allowedTools?: string[];

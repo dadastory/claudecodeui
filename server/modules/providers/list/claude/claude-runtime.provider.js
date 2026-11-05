@@ -324,7 +324,8 @@ export function createEmbeddedFileBoundaryHook(profile) {
   };
 }
 
-function mapCliOptionsToSDK(options = {}) {
+// Used by this provider and embedded-profile contract tests.
+export function mapCliOptionsToSDK(options = {}) {
   const { providerSessionId, cwd, toolsSettings, permissionMode, effort, resumeAnchorId, resumeFromScratch } = options;
 
   const sdkOptions = {};
@@ -402,7 +403,10 @@ function mapCliOptionsToSDK(options = {}) {
 
   sdkOptions.settingSources = embeddedProfile ? ['user'] : ['project', 'user', 'local'];
   if (embeddedProfile?.skills?.length) {
-    sdkOptions.skills = embeddedProfile.skills;
+    sdkOptions.skills = embeddedProfile.mainSkills || embeddedProfile.skills;
+  }
+  if (embeddedProfile?.agents) {
+    sdkOptions.agents = embeddedProfile.agents;
   }
   if (embeddedProfile?.contextWindowTokens) {
     sdkOptions.settings = {
@@ -697,7 +701,14 @@ const DEFERRED_WORK_TOOLS = new Set(['Monitor', 'ScheduleWakeup', 'CronCreate', 
  * @param {Object} sdkMessage - SDK stream message
  * @returns {boolean} True when the message launches work that outlives the turn
  */
-function startsBackgroundWork(sdkMessage) {
+export function startsBackgroundWork(sdkMessage) {
+  // Used by this provider's lifecycle loop and its background-agent regressions.
+  if (sdkMessage?.type === 'system' && ['task_started', 'task_progress'].includes(sdkMessage.subtype)) {
+    return true;
+  }
+  if (sdkMessage?.tool_use_result?.status === 'async_launched') {
+    return true;
+  }
   const content = sdkMessage?.message?.content;
   if (!Array.isArray(content)) {
     return false;
@@ -707,7 +718,7 @@ function startsBackgroundWork(sdkMessage) {
     if (block?.type !== 'tool_use') {
       return false;
     }
-    if (block.name === 'Bash') {
+    if (['Bash', 'Agent', 'Task'].includes(block.name)) {
       return block.input?.run_in_background === true;
     }
     return DEFERRED_WORK_TOOLS.has(block.name);

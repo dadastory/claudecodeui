@@ -26,6 +26,7 @@ import {
 import ChatMessagesPane from '@/modules/chat/transcript/ChatMessagesPane';
 import ChatComposer from '@/modules/chat/composer/ChatComposer';
 import CommandResultModal from '@/modules/chat/modals/CommandResultModal';
+import { useEmbeddedAgentProgress } from '@/modules/chat/hooks/useEmbeddedAgentProgress';
 import { useEmbeddedHostContext } from '@/shared/embeddedHostContext';
 import { IS_LLM4AD_EMBEDDED } from '@/shared/utils';
 
@@ -173,6 +174,8 @@ function ChatInterface({
     lastSeqRef,
     sessionStore,
   });
+
+  useEmbeddedAgentProgress(currentSessionId ?? selectedSession?.id ?? null, chatMessages, isProcessing, subscribe);
 
   // Brand-new conversation: the composer allocated a stable session id via
   // the session gateway before the first send. Record it locally and put it

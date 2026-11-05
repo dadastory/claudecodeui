@@ -321,6 +321,23 @@ export type ChatMessage = {
   [key: string]: unknown;
 };
 
+/** Actual parent/child execution state sent by embedded chat to its same-origin host. */
+export type EmbeddedAgentProgress = {
+  sessionId: string;
+  status: 'ready' | 'running' | 'waiting' | 'idle' | 'interrupted';
+  currentTool: string | null;
+  agents: {
+    id: string;
+    parentId: string;
+    stage: string;
+    description: string;
+    status: 'running' | 'completed' | 'failed' | 'interrupted';
+    toolCount: number;
+    currentTool: string | null;
+    tools: { name: string; done: boolean; failed: boolean }[];
+  }[];
+};
+
 /** The user's locally persisted Claude preferences (allowed and disallowed tool lists, permission skipping and project sort order) read from and written back to browser storage. */
 export type ClaudeSettings = {
   allowedTools: string[];
