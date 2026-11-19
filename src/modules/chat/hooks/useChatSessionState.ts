@@ -276,7 +276,6 @@ export function useChatSessionState({
   const allMessagesLoadedRef = useRef(false);
   const topLoadLockRef = useRef(false);
   const pendingScrollRestoreRef = useRef<ScrollRestoreState | null>(null);
-  const pendingInitialScrollRef = useRef(true);
   const messagesOffsetRef = useRef(0);
   const scrollPositionRef = useRef({ height: 0, top: 0 });
   const loadAllFinishedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -336,7 +335,6 @@ export function useChatSessionState({
     searchScrollActiveRef.current = false;
     topLoadLockRef.current = false;
     pendingScrollRestoreRef.current = null;
-    pendingInitialScrollRef.current = true;
     lastLoadedSessionKeyRef.current = null;
 
     if (loadAllOverlayTimerRef.current) {
@@ -490,16 +488,10 @@ export function useChatSessionState({
     const container = scrollContainerRef.current;
     if (!container) return;
     container.scrollTop = container.scrollHeight;
+    // Scroll events arrive later. Compare the next gesture with the position
+    // we just wrote, including the browser's clamping after content shrinks.
+    scrollPositionRef.current = { height: container.scrollHeight, top: container.scrollTop };
   }, []);
-
-  const scrollToBottomAndReset = useCallback(() => {
-    scrollToBottom();
-    if (allMessagesLoaded) {
-      setVisibleMessageCount(INITIAL_VISIBLE_MESSAGES);
-      setAllMessagesLoaded(false);
-      allMessagesLoadedRef.current = false;
-    }
-  }, [allMessagesLoaded, scrollToBottom]);
 
   const isNearBottom = useCallback((threshold = AT_END_THRESHOLD_PX) => {
     const container = scrollContainerRef.current;
@@ -535,15 +527,23 @@ export function useChatSessionState({
   /**
    * Re-arms auto-follow after an action that means "show me the newest".
    *
-   * Sending a message is the one gesture where following is unambiguously what
-   * the user asked for, so it clears the stop intent and the grace window and
-   * pins the viewport immediately.
+   * Sending a message or clicking the bottom button clears the stop intent and
+   * the grace window and pins the viewport immediately.
    */
   const followLatestMessage = useCallback(() => {
     lastUserScrollUpAtRef.current = 0;
     applyUserScrolledUp(false);
     scrollToBottom();
   }, [applyUserScrolledUp, scrollToBottom]);
+
+  const scrollToBottomAndReset = useCallback(() => {
+    followLatestMessage();
+    if (allMessagesLoaded) {
+      setVisibleMessageCount(INITIAL_VISIBLE_MESSAGES);
+      setAllMessagesLoaded(false);
+      allMessagesLoadedRef.current = false;
+    }
+  }, [allMessagesLoaded, followLatestMessage]);
 
   const loadOlderMessages = useCallback(
     async (container: HTMLDivElement) => {
@@ -613,15 +613,15 @@ export function useChatSessionState({
     const previousTop = scrollPositionRef.current.top;
     const movedTowardOlder = container.scrollTop < previousTop;
 
-    if (movedTowardOlder) {
+    if (movedTowardOlder && !isNearBottom(1)) {
       // A gesture toward older content is the user asking us to stop following.
       // Recorded on the ref as well as the timestamp: the next event, and every
       // follower armed in between, must see the decision this one made.
-      // Automatic following only moves downward, so an upward movement always
-      // belongs to the reader, even if it starts immediately after a follow.
+      // A shrinking transcript can clamp scrollTop upward at the exact bottom;
+      // that layout correction is not a request to review older content.
       lastUserScrollUpAtRef.current = Date.now();
       applyUserScrolledUp(true);
-    } else if (isUserScrolledUpRef.current && isNearBottom(AUTO_FOLLOW_REENGAGE_PX)) {
+    } else if (container.scrollTop > previousTop && isUserScrolledUpRef.current && isNearBottom(AUTO_FOLLOW_REENGAGE_PX)) {
       // The one thing that lifts the stop intent: a return to the end of the
       // transcript. Landed in the wider band rather than exactly on the bottom
       // because a reader who stops a few pixels short has plainly arrived, and
@@ -631,6 +631,7 @@ export function useChatSessionState({
       // Only downward movement is checked here, so a content-driven event can
       // never clear the intent on its own: clearing it requires the viewport to
       // be driven back to within reach of the bottom.
+      lastUserScrollUpAtRef.current = 0;
       applyUserScrolledUp(false);
     }
 
@@ -728,7 +729,6 @@ export function useChatSessionState({
     searchScrollActiveRef.current = false;
     setSearchTarget(null);
 
-    pendingInitialScrollRef.current = true;
     setVisibleMessageCount(INITIAL_VISIBLE_MESSAGES);
     topLoadLockRef.current = false;
     pendingScrollRestoreRef.current = null;
@@ -738,57 +738,6 @@ export function useChatSessionState({
     lastUserScrollUpAtRef.current = 0;
     applyUserScrolledUp(false);
   }, [applyUserScrolledUp, selectedProject?.projectId, selectedSession?.id]);
-
-  // Initial scroll to bottom — robust to lazy content reflow.
-  // The previous implementation fired one scrollToBottom() at +200ms and
-  // cleared the pending flag. When markdown blocks, code highlighting, or
-  // images finished rendering after that window, scrollHeight grew but
-  // nothing re-anchored the viewport, leaving the chat tab visually
-  // "scrolled way up" with the latest assistant message off-screen.
-  //
-  // This version re-scrolls every animation frame while scrollHeight is
-  // still growing, capped at ~1s (60 frames) or 3 consecutive stable
-  // frames. Cancels cleanly on session change via the pending flag.
-  //
-  // Every frame re-checks the follow gate. This is the one follower that runs
-  // before the user has had a chance to look at the transcript — a resumed turn
-  // streams while it settles — so it is also the one most able to fight an
-  // early scroll-up. Standing down leaves the flag pending, so the viewport
-  // stays where the user put it and follow resumes from the other paths.
-  useEffect(() => {
-    if (!isActive) return;
-    if (!pendingInitialScrollRef.current || !scrollContainerRef.current || isLoadingSessionMessages) return;
-    if (chatMessages.length === 0) { pendingInitialScrollRef.current = false; return; }
-    if (searchScrollActiveRef.current) { pendingInitialScrollRef.current = false; return; }
-
-    const container = scrollContainerRef.current;
-    let frame = 0;
-    let lastHeight = 0;
-    let stableCount = 0;
-    let rafId = 0;
-
-    const tick = () => {
-      if (!pendingInitialScrollRef.current || !scrollContainerRef.current) return;
-      if (!canAutoFollow()) return;
-      scrollToBottom();
-      if (container.scrollHeight === lastHeight) {
-        stableCount++;
-      } else {
-        stableCount = 0;
-        lastHeight = container.scrollHeight;
-      }
-      frame++;
-      if (stableCount < 3 && frame < 60) {
-        rafId = requestAnimationFrame(tick);
-      } else {
-        pendingInitialScrollRef.current = false;
-      }
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, [canAutoFollow, chatMessages.length, isActive, isLoadingSessionMessages, scrollToBottom]);
 
   // Session replay/subscription remains active regardless of which main tab is
   // visible. Only persisted-history HTTP traffic is visibility-gated below.
@@ -1125,27 +1074,34 @@ export function useChatSessionState({
   });
 
   useEffect(() => {
-    if (!isActive) return;
-    if (!scrollContainerRef.current || chatMessages.length === 0) return;
-    if (isLoadingMoreRef.current || isLoadingMoreMessages || pendingScrollRestoreRef.current) return;
-    if (searchScrollActiveRef.current) return;
-    // Read through the ref rather than the rendered state. A scroll event
-    // updates the ref immediately but the state only on the next commit, so a
-    // reader who returns to the bottom while output is still streaming would
-    // otherwise be judged by a stale `true` here and never resume following
-    // until some unrelated render happened to re-run this effect.
-    if (isUserScrolledUpRef.current) return;
+    const container = scrollContainerRef.current;
+    if (!isActive || !container || chatMessages.length === 0 || isLoadingSessionMessages || isLoadingMoreMessages) return;
 
-    // Deferred one turn so the new rows are committed before the viewport
-    // moves. `canAutoFollow` is re-checked at fire time because those rows are
-    // exactly what a scroll gesture reacts to: the user can leave the bottom
-    // between the commit and this callback.
-    setTimeout(() => {
-      if (canAutoFollow()) {
+    let followTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleFollow = () => {
+      // Coalesce resize bursts without postponing follow until streaming stops.
+      if (followTimer !== null) return;
+      followTimer = setTimeout(() => {
+        followTimer = null;
+        // Re-read intent and competing scroll owners when delayed work fires.
+        if (!canAutoFollow() || isLoadingMoreRef.current || pendingScrollRestoreRef.current || searchScrollActiveRef.current) return;
         scrollToBottom();
-      }
-    }, 50);
-  }, [canAutoFollow, chatMessages.length, isActive, isLoadingMoreMessages, isUserScrolledUp, scrollToBottom]);
+      }, 50);
+    };
+
+    // Observe the content, not just the fixed-height viewport: streamed edits,
+    // markdown, images and tool expansion can grow it without adding any rows.
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleFollow);
+    const content = container.querySelector('[data-chat-transcript]');
+    observer?.observe(container);
+    if (content) observer?.observe(content);
+    scheduleFollow();
+
+    return () => {
+      observer?.disconnect();
+      if (followTimer !== null) clearTimeout(followTimer);
+    };
+  }, [canAutoFollow, chatMessages.length, isActive, isLoadingMoreMessages, isLoadingSessionMessages, isUserScrolledUp, scrollToBottom, selectedProject?.projectId, selectedSession?.id]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;

@@ -224,7 +224,7 @@ export function useChatComposerState({
     ((
       event: FormEvent<HTMLFormElement> | MouseEvent | TouchEvent | KeyboardEvent<HTMLTextAreaElement>,
       queuedSubmission?: QueuedDraft,
-    ) => Promise<void>) | null
+    ) => Promise<boolean | void>) | null
   >(null);
   const inputValueRef = useRef(input);
   const selectedProjectId = selectedProject?.projectId;
@@ -851,7 +851,7 @@ export function useChatComposerState({
         },
       });
       if (!wasSent) {
-        return;
+        return false;
       }
 
       if (editingAnchorId && IS_LLM4AD_EMBEDDED && window.parent !== window) {
@@ -898,6 +898,7 @@ export function useChatComposerState({
       if (draftScopeRef.current) {
         writeDraftText(draftScopeRef.current, '');
       }
+      return true;
     },
     [
       selectedSession,
@@ -933,22 +934,58 @@ export function useChatComposerState({
     await handleSubmitRef.current?.(createFakeSubmitEvent());
   }, [setInput]);
 
+  const parentPromptInFlight = useRef(false);
   useEffect(() => {
     if (!IS_LLM4AD_EMBEDDED) return;
-    const handleParentPrompt = (event: MessageEvent) => {
+    const handleParentPrompt = async (event: MessageEvent) => {
       if (
         event.source !== window.parent ||
         event.origin !== window.location.origin ||
         event.data?.type !== 'llm4ad:submit-prompt' ||
         typeof event.data.prompt !== 'string'
       ) return;
-      // Preserve an unsent author draft instead of replacing it with an automatic handoff.
-      if (inputValueRef.current.trim()) return;
-      void submitSuggestedPrompt(event.data.prompt);
+      const requestId = typeof event.data.requestId === 'string' ? event.data.requestId : null;
+      if (!requestId) {
+        if (!inputValueRef.current.trim()) void submitSuggestedPrompt(event.data.prompt);
+        return;
+      }
+      const storageKey = `llm4ad:regional-prompts:${sessionKey || selectedProjectId || ''}`;
+      let delivered: string[] = [];
+      try {
+        const stored: unknown = JSON.parse(sessionStorage.getItem(storageKey) || '[]');
+        if (Array.isArray(stored)) delivered = stored.filter((value): value is string => typeof value === 'string');
+      } catch { /* A successful send still works when browser storage is unavailable. */ }
+      const acknowledge = () => window.parent.postMessage(
+        { type: 'llm4ad:prompt-accepted', requestId }, window.location.origin,
+      );
+      if (delivered.includes(requestId)) { acknowledge(); return; }
+      // The host keeps its durable request queued; never replace a draft or queued turn.
+      if (parentPromptInFlight.current || isLoading || queuedDraft || inputValueRef.current.trim() || !selectedProject) return;
+      parentPromptInFlight.current = true;
+      const prompt = event.data.prompt;
+      try {
+        setInput(prompt);
+        inputValueRef.current = prompt;
+        const sent = await handleSubmitRef.current?.(createFakeSubmitEvent());
+        if (sent) {
+          try { sessionStorage.setItem(storageKey, JSON.stringify([...delivered, requestId])); } catch { /* Keep the live acknowledgement. */ }
+          acknowledge();
+        } else if (inputValueRef.current === prompt) {
+          setInput('');
+          inputValueRef.current = '';
+        }
+      } catch {
+        if (inputValueRef.current === prompt) {
+          setInput('');
+          inputValueRef.current = '';
+        }
+      } finally {
+        parentPromptInFlight.current = false;
+      }
     };
     window.addEventListener('message', handleParentPrompt);
     return () => window.removeEventListener('message', handleParentPrompt);
-  }, [submitSuggestedPrompt]);
+  }, [submitSuggestedPrompt, isLoading, queuedDraft, selectedProject, sessionKey, selectedProjectId, setInput]);
 
   // The VPS dispatcher owns sending. While the card is visible, periodically
   // reconcile only its removal so the UI notices when the server claims it.

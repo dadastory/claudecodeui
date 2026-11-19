@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { ReactNode } from 'react';
 
 import { IS_PLATFORM } from '@/shared/utils';
-import { api } from '@/shared/api';
+import { api, renewAuthSession } from '@/shared/api';
 import { AUTH_SESSION_EXPIRED_EVENT, AUTH_TOKEN_REFRESHED_EVENT, getAuthTokenRefreshDelay, isValidRefreshedToken, storeAuthToken } from '@/shared/authToken';
 import { hydrateChatDrafts, resetChatDrafts } from '@/shared/chatDrafts';
 import { hydrateUserPreferences, resetUserPreferences } from '@/shared/userSettings';
@@ -162,30 +162,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     await checkOnboardingStatus();
   }, [checkOnboardingStatus]);
 
-  const refreshSession = useCallback(async () => {
-    if (IS_PLATFORM || !token || !user) {
-      return;
-    }
-
-    try {
-      const response = await api.auth.refresh();
-      if (!response.ok) {
-        return;
-      }
-
-      const payload = await parseJsonSafely<AuthSessionPayload>(response);
-      if (isValidRefreshedToken(payload?.token)) {
-        setToken(payload.token);
-        persistToken(payload.token);
-      }
-    } catch (caughtError) {
-      // A transient network failure must not sign the user out. Focus/visibility
-      // and the next scheduled refresh will retry while the token remains valid.
-      console.warn('[Auth] Session refresh failed:', caughtError);
-    }
-  }, [token, user]);
-
   useEffect(() => {
+    if (IS_PLATFORM) return;
     const handleTokenRefreshed = (event: Event) => {
       const nextToken = (event as CustomEvent<unknown>).detail;
       if (isValidRefreshedToken(nextToken)) {
@@ -220,19 +198,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setNeedsSetup(false);
 
-      if (!token) {
-        return;
-      }
+      const checkedToken = readStoredToken();
+      if (!checkedToken) return;
 
       const userResponse = await api.auth.user();
+      // This response may have legitimately rotated the token through the API helper.
+      const responseToken = userResponse.headers.get('X-Refreshed-Token') ?? checkedToken;
+      const sessionIsCurrent = () => {
+        const current = readStoredToken();
+        return current === checkedToken || current === responseToken;
+      };
+      if (!sessionIsCurrent()) return;
       if (!userResponse.ok) {
-        clearSession();
+        if (userResponse.status === 401) clearSession();
+        else setError(t(AUTH_ERROR_MESSAGES.networkError));
         return;
       }
 
       const userPayload = await parseJsonSafely<AuthUserPayload>(userResponse);
+      if (!sessionIsCurrent()) return;
       if (!userPayload?.user) {
-        clearSession();
+        setError(t(AUTH_ERROR_MESSAGES.authStatusCheckFailed));
         return;
       }
 
@@ -244,7 +230,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [checkOnboardingStatus, clearSession, t, token]);
+  }, [checkOnboardingStatus, clearSession, t]);
 
   useEffect(() => {
     if (IS_PLATFORM) {
@@ -260,38 +246,53 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [checkAuthStatus, checkOnboardingStatus]);
 
   useEffect(() => {
-    if (IS_PLATFORM || !token || !user) {
-      return undefined;
-    }
-
-    const refreshIfNeeded = () => {
-      const refreshDelay = getAuthTokenRefreshDelay(token);
-      if (refreshDelay !== null && refreshDelay <= 0) {
-        void refreshSession();
+    if (IS_PLATFORM || !token) return;
+    let active = true;
+    let refreshing = false;
+    let timer: number | undefined;
+    const schedule = (delay: number) => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => { void refreshIfNeeded(); }, Math.min(delay, 2_147_483_647));
+    };
+    const refreshIfNeeded = async () => {
+      if (!active || refreshing || document.visibilityState === 'hidden' || navigator.onLine === false) return;
+      const storedToken = readStoredToken();
+      const delay = getAuthTokenRefreshDelay(storedToken);
+      if (delay === null) return;
+      if (delay > 0) { schedule(delay); return; }
+      refreshing = true;
+      try {
+        await renewAuthSession();
+      } catch (caughtError) {
+        // Offline and server failures retain the session and get a bounded retry delay.
+        console.warn('[Auth] Session refresh failed:', caughtError);
+      } finally {
+        refreshing = false;
+        if (active && readStoredToken()) {
+          schedule(Math.max(30_000, getAuthTokenRefreshDelay(readStoredToken()) ?? 30_000));
+        }
       }
     };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        refreshIfNeeded();
-      }
+    const wake = () => {
+      if (!user && readStoredToken()) void checkAuthStatus();
+      void refreshIfNeeded();
     };
-
-    const refreshDelay = getAuthTokenRefreshDelay(token);
-    const refreshTimer = refreshDelay === null
-      ? null
-      : window.setTimeout(() => void refreshSession(), refreshDelay);
-
-    window.addEventListener('focus', refreshIfNeeded);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
+    const visibilityChanged = () => {
+      if (document.visibilityState === 'visible') wake();
+      else window.clearTimeout(timer);
+    };
+    const delay = getAuthTokenRefreshDelay(token);
+    if (delay !== null) schedule(delay);
+    const events = ['focus', 'pageshow', 'online'] as const;
+    for (const event of events) window.addEventListener(event, wake);
+    document.addEventListener('visibilitychange', visibilityChanged);
     return () => {
-      if (refreshTimer !== null) {
-        window.clearTimeout(refreshTimer);
-      }
-      window.removeEventListener('focus', refreshIfNeeded);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      active = false;
+      window.clearTimeout(timer);
+      for (const event of events) window.removeEventListener(event, wake);
+      document.removeEventListener('visibilitychange', visibilityChanged);
     };
-  }, [refreshSession, token, user]);
+  }, [checkAuthStatus, token, user]);
 
   const login = useCallback<AuthContextValue['login']>(
     async (username, password) => {

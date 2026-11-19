@@ -80,10 +80,9 @@ test('platform builds send no bearer token, because the session is a cookie', as
   assert.equal('Authorization' in sentHeaders(), false);
 });
 
-test('an expired token is never put on the wire', async () => {
-  // getStoredAuthToken drops it rather than handing it over, so the request goes
-  // out unauthenticated and the app is told the session is gone.
-  localStorage.setItem('auth-token', expiredToken());
+test('local expiry alone does not log out a session before server verification', async () => {
+  const token = expiredToken();
+  localStorage.setItem('auth-token', token);
   let expiries = 0;
   const onExpired = () => {
     expiries += 1;
@@ -94,9 +93,9 @@ test('an expired token is never put on the wire', async () => {
   await (await loadFetch(false))('/api/projects');
 
   window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, onExpired);
-  assert.equal('Authorization' in sentHeaders(), false);
-  assert.equal(localStorage.getItem('auth-token'), null);
-  assert.equal(expiries, 1);
+  assert.equal(sentHeaders().Authorization, `Bearer ${token}`);
+  assert.equal(localStorage.getItem('auth-token'), token);
+  assert.equal(expiries, 0);
 });
 
 test('no token means no Authorization header at all', async () => {
@@ -161,7 +160,7 @@ test('an auth error on the response ends the session', async () => {
     expiries += 1;
   };
   window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, onExpired);
-  respondWith({ 'X-Auth-Error': 'invalid' });
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 401, headers: { 'X-Auth-Error': 'invalid' } })));
 
   await (await loadFetch(false))('/api/projects');
 
@@ -178,4 +177,66 @@ test('an ordinary response leaves the stored token alone', async () => {
   await (await loadFetch(false))('/api/projects');
 
   assert.equal(localStorage.getItem('auth-token'), token);
+});
+
+
+test('platform requests ignore stale standalone tokens and their auth headers', async () => {
+  localStorage.setItem('auth-token', expiredToken());
+  respondWith({ 'X-Auth-Error': 'invalid' });
+  const fetchAuth = await loadFetch(true);
+  await fetchAuth('/api/projects');
+  assert.ok(localStorage.getItem('auth-token'));
+});
+
+test('late standalone 401s cannot discard a newer session', async () => {
+  const old = liveToken();
+  const rotated = old.replace('signature', 'rotated');
+  localStorage.setItem('auth-token', old);
+  const fetchAuth = await loadFetch(false);
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    localStorage.setItem('auth-token', rotated);
+    return new Response('{}', { status: 401, headers: { 'X-Auth-Error': 'invalid-token' } });
+  }));
+  await fetchAuth('/api/projects');
+  assert.equal(localStorage.getItem('auth-token'), rotated);
+});
+
+test('concurrent standalone refresh calls share one renewal request', async () => {
+  localStorage.setItem('auth-token', liveToken());
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify({ token: liveToken() })));
+  vi.stubGlobal('fetch', fetchMock);
+  const { renewAuthSession } = await import('@/shared/api');
+  await Promise.all([renewAuthSession(), renewAuthSession(), renewAuthSession()]);
+  assert.equal(fetchMock.mock.calls.length, 1);
+});
+
+test('a network error never replays a submitted request or clears the standalone session', async () => {
+  localStorage.setItem('auth-token', liveToken());
+  const fetchAuth = await loadFetch(false);
+  const fetchMock = vi.fn().mockRejectedValue(new TypeError('offline'));
+  vi.stubGlobal('fetch', fetchMock);
+  await assert.rejects(fetchAuth('/api/send', { method: 'POST', body: 'prompt' }), /offline/);
+  assert.equal(fetchMock.mock.calls.length, 1);
+  assert.ok(localStorage.getItem('auth-token'));
+});
+
+test('concurrent embedded 401s renew only the host cookie and retry each rejected request once', async () => {
+  const fetchAuth = await loadFetch(true);
+  window.history.replaceState({}, '', '/api/v1/llm4ad/papers/workspaces/id/cloudcli/session/session');
+  const host = { postMessage: vi.fn() };
+  vi.stubGlobal('parent', host);
+  let calls = 0;
+  const fetchMock = vi.fn(async () => new Response('{}', { status: ++calls <= 2 ? 401 : 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+  const requests = [fetchAuth('/api/one'), fetchAuth('/api/two')];
+  await vi.waitFor(() => assert.equal(host.postMessage.mock.calls.length, 1));
+  window.dispatchEvent(new MessageEvent('message', {
+    origin: window.location.origin,
+    source: host as unknown as Window,
+    data: { type: 'llm4ad:auth-renewed', requestId: host.postMessage.mock.calls[0][0].requestId, success: true },
+  }));
+  const responses = await Promise.all(requests);
+  assert.ok(responses.every((response) => response.status === 200));
+  assert.equal(fetchMock.mock.calls.length, 4);
+  window.history.replaceState({}, '', '/');
 });

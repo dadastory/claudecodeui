@@ -192,6 +192,7 @@ function ChatMessagesPane({
         </div>
       )}
       <div
+        data-chat-transcript
         className={`mx-auto w-full space-y-4 px-3 sm:px-4 ${
           IS_LLM4AD_EMBEDDED ? 'max-w-none' : 'max-w-[54.25rem]'
         }`}

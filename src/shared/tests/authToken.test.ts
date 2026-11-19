@@ -84,7 +84,7 @@ test('storeAuthToken: a non-token value is rejected and does not overwrite the s
   assert.equal(localStorage.getItem('auth-token'), 'existing');
 });
 
-test('getStoredAuthToken: an expired token is dropped and the expiry is announced once', () => {
+test('getStoredAuthToken: expiry is advisory until the server rejects the credential', () => {
   localStorage.clear();
   const now = Math.floor(Date.now() / 1000);
   localStorage.setItem('auth-token', makeToken({ iat: now - 7200, exp: now - 3600 }));
@@ -98,9 +98,9 @@ test('getStoredAuthToken: an expired token is dropped and the expiry is announce
   const token = getStoredAuthToken();
 
   window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, onExpired);
-  assert.equal(token, null, 'an expired token must not be handed to a request');
-  assert.equal(localStorage.getItem('auth-token'), null);
-  assert.equal(expiries, 1);
+  assert.ok(token);
+  assert.equal(localStorage.getItem('auth-token'), token);
+  assert.equal(expiries, 0);
 });
 
 test('getStoredAuthToken: a live token is returned and left in storage', () => {

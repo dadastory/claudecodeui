@@ -2,6 +2,7 @@ import {
   expireAuthSession,
   getStoredAuthToken,
   storeAuthToken,
+  renewEmbeddedSession,
 } from '@/shared/authToken';
 import { IS_PLATFORM } from '@/shared/utils';
 import { readVoiceConfig, voiceConfigHeaders } from '@/shared/voiceConfig';
@@ -13,41 +14,62 @@ export type ApiRequestOptions = Omit<RequestInit, 'headers'> & {
   headers?: Record<string, string>;
 };
 
-// Utility function for authenticated API calls
-export const authenticatedFetch = (
+/** Fetch once, renewing the embedding host ticket only after an explicit 401. */
+export const authenticatedFetch = async (
   url: string,
   options: ApiRequestOptions = {},
 ): Promise<Response> => {
-  const token = getStoredAuthToken();
-
+  const token = IS_PLATFORM ? null : getStoredAuthToken();
   const defaultHeaders: Record<string, string> = {};
-
-  // Only set Content-Type for non-FormData requests
-  if (!(options.body instanceof FormData)) {
-    defaultHeaders['Content-Type'] = 'application/json';
-  }
-
-  if (!IS_PLATFORM && token) {
-    defaultHeaders['Authorization'] = `Bearer ${token}`;
-  }
-
-  return fetch(resolveEmbeddedHttpUrl(url), {
+  if (!(options.body instanceof FormData)) defaultHeaders['Content-Type'] = 'application/json';
+  if (token) defaultHeaders.Authorization = `Bearer ${token}`;
+  const requestOptions = {
     ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
-  }).then((response) => {
-    const refreshedToken = response.headers.get('X-Refreshed-Token');
-    if (refreshedToken) {
-      storeAuthToken(refreshedToken);
-    }
-    if (response.headers.get('X-Auth-Error')) {
-      expireAuthSession();
-    }
-    return response;
-  });
+    headers: { ...defaultHeaders, ...options.headers },
+  };
+  const response = await fetch(resolveEmbeddedHttpUrl(url), requestOptions);
+  if (IS_PLATFORM) {
+    if (response.status !== 401) return response;
+    await renewEmbeddedSession();
+    options.signal?.throwIfAborted();
+    // The host rejects expired tickets before forwarding the request body.
+    return fetch(resolveEmbeddedHttpUrl(url), requestOptions);
+  }
+  const refreshedToken = response.headers.get('X-Refreshed-Token');
+  if (response.ok && refreshedToken) storeAuthToken(refreshedToken, token);
+  if (response.status === 401 && response.headers.get('X-Auth-Error')) expireAuthSession(token);
+  return response;
 };
+
+let authRenewal: { token: string; promise: Promise<string | null> } | null = null;
+
+/** Renew the standalone JWT once for simultaneous timers, HTTP and socket recovery. */
+export function renewAuthSession(): Promise<string | null> {
+  const token = getStoredAuthToken();
+  if (IS_PLATFORM || !token) return Promise.resolve(null);
+  if (authRenewal?.token === token) return authRenewal.promise;
+  const promise = (async () => {
+    try {
+      const response = await fetch(resolveEmbeddedHttpUrl('/api/auth/refresh'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (response.status === 401) expireAuthSession(token);
+      if (!response.ok) throw Object.assign(new Error('Session renewal failed'), { status: response.status });
+      const payload = await response.json() as { token?: unknown };
+      const nextToken = payload.token ?? response.headers.get('X-Refreshed-Token');
+      if (!storeAuthToken(nextToken, token) && getStoredAuthToken() === token) {
+        throw new Error('Invalid session renewal response');
+      }
+      return getStoredAuthToken();
+    } finally {
+      if (authRenewal?.token === token) authRenewal = null;
+    }
+  })();
+  authRenewal = { token, promise };
+  return promise;
+}
 
 // ─── Request helpers ────────────────────────────────────────────────────────
 // Every endpoint below goes through these so verb, JSON encoding and query

@@ -7,9 +7,8 @@ import type { NormalizedMessage, Project, ProjectSession } from '@/shared/types'
 
 /**
  * The transcript's scroll position is written from five places coordinated by
- * refs and timers rather than by one owner. These are the two cases where that
- * coordination was observably wrong; both are timing bugs, so they are driven
- * on fake timers rather than by clicking.
+ * refs and timers. Drive delayed work and content resizes independently so a
+ * newly appended row cannot hide a failure to follow an existing streaming row.
  */
 
 vi.mock('@/shared/api', () => ({
@@ -22,6 +21,20 @@ vi.mock('@/shared/api', () => ({
 
 const SESSION_A = 'session-a';
 const SESSION_B = 'session-b';
+
+class StubResizeObserver {
+  static instances: StubResizeObserver[] = [];
+  observed: Element[] = [];
+  disconnected = false;
+
+  constructor(private callback: ResizeObserverCallback) {
+    StubResizeObserver.instances.push(this);
+  }
+
+  observe(element: Element) { this.observed.push(element); }
+  disconnect() { this.disconnected = true; }
+  fire() { this.callback([], this as unknown as ResizeObserver); }
+}
 
 const project: Project = {
   projectId: 'project-1',
@@ -64,11 +77,14 @@ function simulateUserScroll(container: ReturnType<typeof createContainer>, scrol
  */
 async function mountContainer(
   result: { current: { scrollContainerRef: { current: HTMLDivElement | null } } },
-  rerender: (props: { session: ProjectSession }) => void,
+  rerender: (props: { session: ProjectSession; isActive?: boolean }) => void,
   container: ReturnType<typeof createContainer>,
   sessionId: string,
 ) {
   result.current.scrollContainerRef.current = container.element;
+  await act(async () => {
+    rerender({ session: { id: sessionId } as ProjectSession, isActive: false });
+  });
   await act(async () => {
     rerender({ session: { id: sessionId } as ProjectSession });
   });
@@ -85,6 +101,9 @@ async function mountContainer(
  */
 function createContainer(scrollHeight: number, clientHeight: number) {
   const element = document.createElement('div');
+  const content = document.createElement('div');
+  content.setAttribute('data-chat-transcript', '');
+  element.appendChild(content);
   const writes: number[] = [];
   let scrollTop = scrollHeight - clientHeight;
   let currentScrollHeight = scrollHeight;
@@ -94,13 +113,14 @@ function createContainer(scrollHeight: number, clientHeight: number) {
   Object.defineProperty(element, 'scrollTop', {
     get: () => scrollTop,
     set: (next: number) => {
-      scrollTop = next;
+      scrollTop = Math.max(0, Math.min(next, currentScrollHeight - clientHeight));
       writes.push(next);
     },
   });
 
   return {
     element: element as HTMLDivElement,
+    content,
     writes,
     get scrollHeight() {
       return currentScrollHeight;
@@ -152,9 +172,9 @@ async function renderChatSessionState(options: {
   const { useChatSessionState } = await import('@/modules/chat/hooks/useChatSessionState');
 
   return renderHook(
-    ({ session }: { session: ProjectSession }) =>
+    ({ session, isActive = true }: { session: ProjectSession; isActive?: boolean }) =>
       useChatSessionState({
-        isActive: true,
+        isActive,
         selectedProject: project,
         selectedSession: session,
         ws: null,
@@ -174,13 +194,120 @@ beforeEach(() => {
   // that window look permanently open, so every "does it still follow?" case
   // would pass without ever exercising the re-engagement it is meant to test.
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
-  // The initial-scroll effect is a separate writer that re-scrolls to the
-  // bottom every animation frame until the height settles. It would satisfy an
-  // assertion meant for the deferred timer, so it is silenced here — these
-  // tests are about which writer wins, and it is not one of the two.
-  vi.stubGlobal('requestAnimationFrame', () => 0);
-  vi.stubGlobal('cancelAnimationFrame', () => undefined);
+  StubResizeObserver.instances = [];
+  vi.stubGlobal('ResizeObserver', StubResizeObserver);
   localStorage.clear();
+});
+
+describe('transcript layout growth', () => {
+  async function setup() {
+    const messages = new Map<string, NormalizedMessage[]>([
+      [SESSION_A, [buildMessage(1, '2026-01-01T00:00:00.000Z')]],
+      [SESSION_B, [buildMessage(3, '2026-01-01T00:00:02.000Z')]],
+    ]);
+    const hook = await renderChatSessionState({
+      session: { id: SESSION_A } as ProjectSession,
+      store: createStore(messages),
+    });
+    const container = createContainer(5000, 500);
+    await mountContainer(hook.result, hook.rerender, container, SESSION_A);
+    act(() => { vi.advanceTimersByTime(1000); });
+    container.writes.length = 0;
+    return { ...hook, container, messages };
+  }
+
+  function resize(container: ReturnType<typeof createContainer>, height: number) {
+    container.setScrollHeight(height);
+    act(() => {
+      for (const observer of StubResizeObserver.instances) {
+        if (!observer.disconnected && observer.observed.includes(container.content)) observer.fire();
+      }
+      vi.advanceTimersByTime(100);
+    });
+  }
+
+  it('follows the same streaming row and delayed markdown/tool growth after completion', async () => {
+    const { container, messages, rerender } = await setup();
+    for (const [index, height] of [5800, 6600, 7200].entries()) {
+      messages.set(SESSION_A, [{
+        ...messages.get(SESSION_A)![0],
+        kind: index < 2 ? 'stream_delta' : 'text',
+        content: `expanded reply ${index}`,
+      } as NormalizedMessage]);
+      act(() => { rerender({ session: { id: SESSION_A } as ProjectSession }); });
+      resize(container, height);
+      expect(container.writes.at(-1)).toBe(height);
+    }
+    // Child layout can change without any store update or parent render.
+    resize(container, 8400);
+    expect(container.writes.at(-1)).toBe(8400);
+  });
+
+  it('leaves history alone even after the gesture grace period has elapsed', async () => {
+    const { container, result } = await setup();
+    act(() => { simulateUserScroll(container, 1000); });
+    act(() => { vi.advanceTimersByTime(1000); });
+    resize(container, 7000);
+    expect(result.current.isUserScrolledUp).toBe(true);
+    expect(container.writes).toEqual([]);
+  });
+
+  it('does not mistake a bottom clamp after content shrinks for an upward gesture', async () => {
+    const { container, result } = await setup();
+    container.setScrollHeight(4000);
+    act(() => { simulateUserScroll(container, 3500); });
+    expect(result.current.isUserScrolledUp).toBe(false);
+    resize(container, 7000);
+    expect(container.writes.at(-1)).toBe(7000);
+  });
+
+  it('does not resume on a stationary event near the bottom while reviewing history', async () => {
+    const { container, result } = await setup();
+    act(() => { simulateUserScroll(container, 4400); });
+    act(() => { vi.advanceTimersByTime(1000); });
+    act(() => { simulateUserScroll(container, 4400); });
+    resize(container, 7000);
+    expect(result.current.isUserScrolledUp).toBe(true);
+    expect(container.writes).toEqual([]);
+  });
+
+  it('resumes on a manual return to bottom before the upward gesture grace expires', async () => {
+    const { container, result } = await setup();
+    act(() => {
+      simulateUserScroll(container, 1000);
+      simulateUserScroll(container, 4500);
+    });
+    resize(container, 7000);
+    expect(result.current.isUserScrolledUp).toBe(false);
+    expect(container.writes.at(-1)).toBe(7000);
+  });
+
+  it('the bottom button explicitly restores follow without relying on a scroll event', async () => {
+    const { container, result } = await setup();
+    act(() => { simulateUserScroll(container, 1000); });
+    act(() => { result.current.scrollToBottomAndReset(); });
+    expect(result.current.isUserScrolledUp).toBe(false);
+    resize(container, 7000);
+    expect(container.writes.at(-1)).toBe(7000);
+  });
+
+  it('cancels queued follow and disconnects layout observers on a session change or unmount', async () => {
+    const { container, rerender, unmount } = await setup();
+    act(() => { simulateUserScroll(container, 1000); });
+    const previousObservers = [...StubResizeObserver.instances];
+    await act(async () => {
+      for (const observer of previousObservers) if (!observer.disconnected) observer.fire();
+      rerender({ session: { id: SESSION_B } as ProjectSession });
+    });
+    expect(previousObservers.every((observer) => observer.disconnected)).toBe(true);
+    resize(container, 6500);
+    expect(container.writes.at(-1)).toBe(6500);
+    unmount();
+    expect(StubResizeObserver.instances.every((observer) => observer.disconnected)).toBe(true);
+    container.writes.length = 0;
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(container.writes).toEqual([]);
+  });
 });
 
 afterEach(() => {

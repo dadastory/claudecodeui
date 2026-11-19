@@ -38,6 +38,8 @@ import {
 } from '@/modules/notifications/index.js';
 import { createCompleteMessage, createNormalizedMessage } from '@/shared/utils.js';
 import { getEmbeddedRuntimeProfile } from '@/shared/embeddedProfile.js';
+import { createClaudeReadStateRecovery } from '@/modules/providers/services/claude-read-state.service.js';
+import { createHeldPromptStream } from '@/modules/providers/services/claude-prompt-stream.service.js';
 
 const activeSessions = new Map();
 const pendingToolApprovals = new Map();
@@ -242,8 +244,33 @@ function isPathInside(rootPath, candidatePath) {
 
 /** Readable roots: the source tree, plus whatever the profile adds. */
 function readableRootsOf(profile) {
-  const roots = [profile.workspaceRoot, ...(profile.readableRoots || [])];
+  const roots = [profile.workspaceRoot, ...(profile.readableRoots || []), profile.scratchRoot];
   return roots.filter((root) => typeof root === 'string' && root);
+}
+
+/** Resolve existing ancestors too, since Write may target a new nested draft. */
+async function canonicalToolPath(candidatePath) {
+  // Preserve '..' until realpath follows preceding symlinks in filesystem order.
+  let existing = candidatePath;
+  const missing = [];
+  for (;;) {
+    try {
+      return path.resolve(await fs.realpath(existing), ...missing);
+    } catch (error) {
+      if (error.code !== 'ENOENT') return null;
+      try {
+        // A dangling symlink is not a safe nonexistent file or directory.
+        await fs.lstat(existing);
+        return null;
+      } catch (statError) {
+        if (statError.code !== 'ENOENT') return null;
+      }
+      const parent = path.dirname(existing);
+      if (parent === existing) return null;
+      missing.unshift(path.basename(existing));
+      existing = parent;
+    }
+  }
 }
 
 /**
@@ -254,12 +281,13 @@ function readableRootsOf(profile) {
  * much more than that — earlier stages' output, its skill files, the persisted
  * session, attached project documents — and holding reads to the write
  * boundary made every stage fail once it looked at anything outside its own
- * files. Reads are bounded by `readableRoots`, writes by `writablePaths`.
+ * files. Reads are bounded by `readableRoots`, writes by `writablePaths` or the
+ * trusted scratch root. Canonical paths prevent symlink escapes from either.
  *
  * Returns true (allowed) for anything this boundary does not govern, so a tool
  * added later is not silently blocked by a check that never considered it.
  */
-function isEmbeddedFileToolAllowed(profile, toolName, input) {
+async function isEmbeddedFileToolAllowed(profile, toolName, input) {
   if (!profile?.workspaceRoot || !input || typeof input !== 'object') {
     return true;
   }
@@ -270,23 +298,36 @@ function isEmbeddedFileToolAllowed(profile, toolName, input) {
   const isSearchTool = toolName === 'Glob' || toolName === 'Grep';
   const field = isSearchTool ? 'path' : 'file_path';
   const suppliedPath = input[field];
+  const rawPath = typeof suppliedPath === 'string'
+    ? path.isAbsolute(suppliedPath) ? suppliedPath : `${path.resolve(profile.workspaceRoot)}${path.sep}${suppliedPath}`
+    : null;
 
   if (['Read', 'Glob', 'Grep'].includes(toolName)) {
     // A search with no `path` defaults to the workspace, which is inside the
     // readable roots by construction.
     if (isSearchTool && typeof suppliedPath !== 'string') {
-      return isPathInside(profile.workspaceRoot, profile.workspaceRoot);
+      return await canonicalToolPath(profile.workspaceRoot) === path.resolve(profile.workspaceRoot);
     }
     if (typeof suppliedPath !== 'string' || !suppliedPath) {
       return false;
     }
-    return readableRootsOf(profile).some((root) => isPathInside(root, suppliedPath));
+    const candidate = resolveToolPath(profile.workspaceRoot, suppliedPath);
+    const canonical = await canonicalToolPath(rawPath);
+    return canonical !== null && readableRootsOf(profile).some((root) =>
+      isPathInside(root, candidate) && isPathInside(root, canonical));
   }
 
   if (typeof suppliedPath !== 'string' || !suppliedPath) {
     return false;
   }
-  if (!isPathInside(profile.workspaceRoot, suppliedPath)) {
+  const candidate = resolveToolPath(profile.workspaceRoot, suppliedPath);
+  const canonical = await canonicalToolPath(rawPath);
+  if (canonical === null) return false;
+  if (typeof profile.scratchRoot === 'string' && path.isAbsolute(profile.scratchRoot)
+      && isPathInside(profile.scratchRoot, candidate) && isPathInside(profile.scratchRoot, canonical)) {
+    return true;
+  }
+  if (!isPathInside(profile.workspaceRoot, candidate) || !isPathInside(profile.workspaceRoot, canonical)) {
     return false;
   }
 
@@ -295,10 +336,9 @@ function isEmbeddedFileToolAllowed(profile, toolName, input) {
       return false;
     }
     const allowed = path.resolve(profile.workspaceRoot, allowedPath);
-    const candidate = resolveToolPath(profile.workspaceRoot, suppliedPath);
     return allowedPath.endsWith('/')
-      ? candidate === allowed || candidate.startsWith(`${allowed}${path.sep}`)
-      : candidate === allowed;
+      ? isPathInside(allowed, canonical)
+      : canonical === allowed;
   });
 }
 
@@ -311,7 +351,7 @@ function isEmbeddedFileToolAllowed(profile, toolName, input) {
  */
 export function createEmbeddedFileBoundaryHook(profile) {
   return async (input) => {
-    if (isEmbeddedFileToolAllowed(profile, input?.tool_name, input?.tool_input)) {
+    if (await isEmbeddedFileToolAllowed(profile, input?.tool_name, input?.tool_input)) {
       return {};
     }
     return {
@@ -759,32 +799,6 @@ async function buildPromptMessages(command, images, files, cwd) {
 }
 
 /**
- * Wraps prompt messages in an async iterable that yields them and then parks.
- *
- * The SDK closes the CLI's stdin as soon as its input iterable is exhausted (and
- * immediately on `result` for string prompts). The CLI reads that EOF as the end
- * of the run and kills anything still going in the background, so the iterable
- * has to stay pending until we actually want the process gone.
- *
- * @param {Array<Object>} messages - SDKUserMessage records to send
- * @returns {{ stream: AsyncIterable, release: () => void }} Stream plus its closer
- */
-function createHeldPromptStream(messages) {
-  let release;
-  const held = new Promise((resolve) => { release = resolve; });
-
-  const stream = (async function* () {
-    for (const message of messages) {
-      yield message;
-    }
-    // Keeps stdin open — the CLI stays alive until release() is called.
-    await held;
-  })();
-
-  return { stream, release };
-}
-
-/**
  * Loads MCP server configurations from ~/.claude.json
  * @param {string} cwd - Current working directory for project-specific configs
  * @returns {Object|null} MCP servers object or null if none found
@@ -912,6 +926,7 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
   // Hoisted above the try so the catch's cleanup can tell whether this run
   // still owns the activeSessions entry (or was superseded by a newer run).
   let queryInstance = null;
+  let readStateRecovery = null;
 
   try {
     const resolvedModel = await context.resolveResumeModel(sessionId, options.model);
@@ -930,6 +945,22 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
     });
 
     const embeddedProfile = getEmbeddedRuntimeProfile(sessionId);
+    // Know the native scope before the first prompt. The SDK does not deliver
+    // startup/resume SessionStart hooks, and Write validates before PreToolUse.
+    if (!sdkOptions.resume) sdkOptions.sessionId = crypto.randomUUID();
+    const readStateSessionId = sdkOptions.resume || sdkOptions.sessionId;
+    readStateRecovery = createClaudeReadStateRecovery({
+      cwd: sdkOptions.cwd,
+      configDir: sdkOptions.env.CLAUDE_CONFIG_DIR,
+      reset: Boolean(options.resumeFromScratch || options.resumeAnchorId),
+      canAccess: (file) => isEmbeddedFileToolAllowed(embeddedProfile, 'Write', { file_path: file }),
+      seedReadState: async (file, mtime) => {
+        if (typeof queryInstance?.seedReadState !== 'function') {
+          throw new Error('Claude read-state restoration is unavailable');
+        }
+        await queryInstance.seedReadState(file, mtime);
+      },
+    });
     const mcpServers = await loadMcpConfig(options.cwd);
     if (mcpServers || embeddedProfile?.mcpServers) {
       sdkOptions.mcpServers = {
@@ -944,12 +975,14 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
     const promptMessages = await buildPromptMessages(command, options.images, options.files, options.cwd);
 
     sdkOptions.hooks = {
-      ...(embeddedProfile?.workspaceRoot ? {
-        PreToolUse: [{
+      ...readStateRecovery.hooks,
+      PreToolUse: [
+        ...(embeddedProfile?.workspaceRoot ? [{
           matcher: 'Read|Glob|Grep|Write|Edit',
           hooks: [createEmbeddedFileBoundaryHook(embeddedProfile)],
-        }],
-      } : {}),
+        }] : []),
+        ...readStateRecovery.hooks.PreToolUse,
+      ],
       Notification: [{
         matcher: '',
         hooks: [async (input) => {
@@ -979,7 +1012,7 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
     sdkOptions.canUseTool = async (toolName, input, context) => {
       const requiresInteraction = TOOLS_REQUIRING_INTERACTION.has(toolName);
 
-      if (!isEmbeddedFileToolAllowed(embeddedProfile, toolName, input)) {
+      if (!await isEmbeddedFileToolAllowed(embeddedProfile, toolName, input)) {
         return { behavior: 'deny', message: 'Tool path is outside the active research stage boundary' };
       }
 
@@ -1061,7 +1094,11 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
       return { behavior: 'deny', message: decision.message ?? 'User denied tool use' };
     };
 
-    let heldPrompt = createHeldPromptStream(promptMessages);
+    const preparePrompt = async () => {
+      await queryInstance.initializationResult();
+      await readStateRecovery.start(readStateSessionId);
+    };
+    let heldPrompt = createHeldPromptStream(promptMessages, preparePrompt);
     releasePromptStream = heldPrompt.release;
     try {
       queryInstance = query({
@@ -1078,7 +1115,7 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
       delete sdkOptions.hooks;
       // Discard the abandoned stream and build a fresh one for the retry.
       heldPrompt.release();
-      heldPrompt = createHeldPromptStream(promptMessages);
+      heldPrompt = createHeldPromptStream(promptMessages, preparePrompt);
       releasePromptStream = heldPrompt.release;
       queryInstance = query({
         prompt: heldPrompt.stream,
@@ -1262,6 +1299,7 @@ async function queryClaudeSDK(command, options = {}, ws, context) {
       error
     });
   } finally {
+    await readStateRecovery?.close();
     // Always close stdin — otherwise an aborted or failed run leaves the CLI
     // process (and its MCP servers) alive until the server exits.
     if (idleReleaseTimer) {

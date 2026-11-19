@@ -35,6 +35,8 @@ type EmbeddedRuntimeProfile = {
    */
   readableRoots?: string[];
   writablePaths?: string[];
+  /** Trusted isolated worker drafts, separate from shared source write paths. */
+  scratchRoot?: string;
 };
 
 const profiles = new Map<string, EmbeddedRuntimeProfile>();

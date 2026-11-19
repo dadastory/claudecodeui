@@ -1,3 +1,5 @@
+import { detectEmbeddedBasePath } from '@/shared/embeddedRuntime';
+
 /**
  * The client's half of the JWT session: parsing, expiry, storage and the two
  * events the auth context listens to.
@@ -50,10 +52,8 @@ const readTokenClaims = (token: unknown): TokenClaims | null => {
   }
 };
 
-// Tolerance for client/server clock skew. The server's own jwt.verify is the
-// real authority; this check only decides whether the client should discard a
-// token locally. Without an allowance, a browser clock running slightly ahead
-// reads a still-server-valid token as expired and drops the session.
+// Tolerance for local expiry hints. Server verification remains authoritative;
+// a browser clock running ahead must never revoke a still-valid session.
 export const TOKEN_EXPIRY_SKEW_MS = 60_000;
 
 export const isAuthTokenExpired = (token: unknown): boolean => {
@@ -71,7 +71,8 @@ export const getAuthTokenRefreshDelay = (token: unknown): number | null => {
   return Math.max(0, refreshAt - Date.now());
 };
 
-export const expireAuthSession = (): void => {
+export const expireAuthSession = (expectedToken?: string | null): void => {
+  if (expectedToken !== undefined && localStorage.getItem('auth-token') !== expectedToken) return;
   localStorage.removeItem('auth-token');
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(AUTH_SESSION_EXPIRED_EVENT));
@@ -79,18 +80,17 @@ export const expireAuthSession = (): void => {
 };
 
 export const getStoredAuthToken = (): string | null => {
-  const token = localStorage.getItem('auth-token');
-  if (token && isAuthTokenExpired(token)) {
-    expireAuthSession();
-    return null;
-  }
-  return token;
+  // Browser clocks and wake timing are advisory. Only the server revokes a session.
+  return localStorage.getItem('auth-token');
 };
 
-export const storeAuthToken = (token: unknown): boolean => {
+export const storeAuthToken = (token: unknown, expectedToken?: string | null): boolean => {
   if (!isValidRefreshedToken(token)) {
     return false;
   }
+  const currentToken = localStorage.getItem('auth-token');
+  if (expectedToken !== undefined && currentToken !== expectedToken) return false;
+  if (currentToken === token) return true;
 
   localStorage.setItem('auth-token', token);
   if (typeof window !== 'undefined') {
@@ -98,3 +98,35 @@ export const storeAuthToken = (token: unknown): boolean => {
   }
   return true;
 };
+
+
+// All transports in one iframe share the same host ticket renewal.
+let pendingRenewal: Promise<void> | null = null;
+let requestSequence = 0;
+
+/** Ask the trusted host to renew its cookie without reloading chat or sending tokens. */
+export function renewEmbeddedSession(): Promise<void> {
+  if (!detectEmbeddedBasePath() || window.parent === window) return Promise.resolve();
+  if (pendingRenewal) return pendingRenewal;
+  const requestId = `auth-${Date.now()}-${++requestSequence}`;
+  pendingRenewal = new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener('message', receive);
+    };
+    const receive = (event: MessageEvent) => {
+      if (event.source !== window.parent || event.origin !== window.location.origin ||
+        event.data?.type !== 'llm4ad:auth-renewed' || event.data.requestId !== requestId) return;
+      cleanup();
+      if (event.data.success === true) resolve();
+      else reject(Object.assign(new Error('Embedded session renewal failed'), { status: event.data.status }));
+    };
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('Embedded session renewal timed out'));
+    }, 30_000);
+    window.addEventListener('message', receive);
+    window.parent.postMessage({ type: 'llm4ad:auth-renew', requestId }, window.location.origin);
+  }).finally(() => { pendingRenewal = null; });
+  return pendingRenewal;
+}
